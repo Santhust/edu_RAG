@@ -1,0 +1,13 @@
+# Already installed on this machine; listed for reproducibility.
+numpy
+scikit-learn
+pypdf
+rich
+
+# Optional: dense retrieval
+fastembed
+
+# Optional: capstone comparison
+chromadb
+llama-index-core
+llama-index-llms-ollama

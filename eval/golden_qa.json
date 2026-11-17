@@ -1,0 +1,104 @@
+{
+  "book": "Noble Warrior: A Life of the Buddha (Thanissaro Bhikkhu & Khematto Bhikkhu)",
+  "note": "Expected pages are the printed page numbers in the book. Grading allows a small page tolerance because a relevant passage can start just before the exact page.",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "According to the Introduction, what are the Buddha's three main accomplishments?",
+      "expected_page": 3,
+      "expected_chapter": "Introduction",
+      "keywords": ["awakening", "teaching", "Dhamma"]
+    },
+    {
+      "id": "q02",
+      "question": "In what town in the Sakyan countryside was the bodhisatta born?",
+      "expected_page": 19,
+      "expected_chapter": "Birth",
+      "keywords": ["Lumbini"]
+    },
+    {
+      "id": "q03",
+      "question": "Which seer saw the devas celebrating the bodhisatta's birth and then visited Suddhodana's dwelling?",
+      "expected_page": 19,
+      "expected_chapter": "Birth",
+      "keywords": ["Asita"]
+    },
+    {
+      "id": "q04",
+      "question": "What were the names of the Buddha's father and mother?",
+      "expected_page": 15,
+      "expected_chapter": "Birth",
+      "keywords": ["Suddhodana", "Māyā"]
+    },
+    {
+      "id": "q05",
+      "question": "What sights prompted the bodhisatta's original impulse to search for awakening?",
+      "expected_page": 23,
+      "expected_chapter": "The Noble Search",
+      "keywords": ["old", "sick", "dead", "wilderness"]
+    },
+    {
+      "id": "q06",
+      "question": "In which forest was the Buddha dwelling when he compared his knowledge to a handful of leaves?",
+      "expected_page": 77,
+      "expected_chapter": "The Awakening",
+      "keywords": ["Siṁsapā"]
+    },
+    {
+      "id": "q07",
+      "question": "What did the Buddha set turning with his first discourse after the awakening?",
+      "expected_page": 178,
+      "expected_chapter": "Setting the Wheel of Dhamma in Motion",
+      "keywords": ["Wheel", "Dhamma"]
+    },
+    {
+      "id": "q08",
+      "question": "Which discourse in the book is called the Not-Self Discourse?",
+      "expected_page": 182,
+      "expected_chapter": "The Not-Self Discourse",
+      "keywords": ["not-self", "five"]
+    },
+    {
+      "id": "q09",
+      "question": "Which brothers were the audience for the Fire Sermon?",
+      "expected_page": 209,
+      "expected_chapter": "The Fire Sermon",
+      "keywords": ["Kassapa"]
+    },
+    {
+      "id": "q10",
+      "question": "Which king of Magadha became a supporter of the Buddha?",
+      "expected_page": 211,
+      "expected_chapter": "King Bimbisāra of Magadha",
+      "keywords": ["Bimbisāra"]
+    },
+    {
+      "id": "q11",
+      "question": "Who were the Buddha's two chief disciples?",
+      "expected_page": 216,
+      "expected_chapter": "The Two Chief Disciples",
+      "keywords": ["Sāriputta", "Moggallāna"]
+    },
+    {
+      "id": "q12",
+      "question": "What rule did the Buddha lay down about giving the Going-forth to a son without his parents' permission?",
+      "expected_page": 232,
+      "expected_chapter": "Returning Home",
+      "keywords": ["parents", "permission"]
+    },
+    {
+      "id": "q13",
+      "question": "Which generous laywoman is the subject of a chapter in the Sāvatthī section?",
+      "expected_page": 341,
+      "expected_chapter": "Lady Visākhā",
+      "keywords": ["Visākhā"]
+    },
+    {
+      "id": "q14",
+      "question": "What are the four noble truths as presented in the book?",
+      "expected_page": 115,
+      "expected_chapter": "The Four Noble Truths",
+      "keywords": ["stress", "origination", "cessation", "path"]
+    }
+  ]
+}
