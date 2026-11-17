@@ -1,4 +1,6 @@
 .venv/
 data/
+books/
+*.pdf
 __pycache__/
 *.pyc

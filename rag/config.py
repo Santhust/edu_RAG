@@ -20,11 +20,9 @@ EVAL_DIR = ROOT / "eval"
 
 CONFIG_PATH = Path.home() / ".config" / "edu_rag" / "config.json"
 
-DEFAULT_PDF = Path(
-    "/home/sanrpi5/Calibre Library/Thanissaro Bhikkhu/"
-    "Noble Warrior _ A Life of the Buddha Compiled from the Pali Canon (44)/"
-    "Noble Warrior _ A Life of the Buddha Compi - Thanissaro Bhikkhu.pdf"
-)
+# Portable default: download the book yourself and place it here, or pass
+# --pdf PATH / set RAG_PDF_PATH. The file is not shipped with this repo.
+DEFAULT_PDF = ROOT / "books" / "noble-warrior.pdf"
 
 # api_style decides which wire format the chat client uses.
 PROVIDER_PRESETS: dict[str, dict[str, str | None]] = {

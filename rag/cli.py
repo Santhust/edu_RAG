@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -72,6 +73,7 @@ def print_answer(result: Answer) -> None:
 def _settings(args: argparse.Namespace) -> Settings:
     base = Settings.load()
     return base.overrides(
+        pdf_path=args.pdf if hasattr(args, "pdf") else None,
         chunk_size=args.chunk_size if hasattr(args, "chunk_size") else None,
         overlap=args.overlap if hasattr(args, "overlap") else None,
         top_k=args.k if hasattr(args, "k") else None,
@@ -365,6 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ingest = subs.add_parser("ingest", help="extract, clean, chunk and index the book")
     common(ingest)
+    ingest.add_argument("--pdf", type=Path, help="path to the source PDF (or set RAG_PDF_PATH)")
     ingest.add_argument("--chunk-size", type=int)
     ingest.add_argument("--overlap", type=int)
     ingest.add_argument("--force", action="store_true")

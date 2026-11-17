@@ -6,13 +6,27 @@ The point is to see every gear, so the core uses only Python plus
 scikit-learn / numpy / rich, with Ollama or any OpenAI-compatible cloud API
 for generation.
 
+## Getting the book
+
+The source PDF is not included in this repository. Download it yourself from
+the publisher's site:
+
+- Book page: https://www.dhammatalks.org/books/NobleWarrior/
+- Direct PDF: https://www.dhammatalks.org/Archive/Writings/Ebooks/NobleWarrior_210213.pdf
+
+The book is by Thanissaro Bhikkhu and Khematto Bhikkhu and is licensed
+[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Save the PDF
+as `books/noble-warrior.pdf` (that folder is ignored by git), or keep it
+anywhere and pass its path with `--pdf` / `RAG_PDF_PATH`. Any PDF works, but the
+cleaning and chapter heuristics in `rag/clean.py` are tuned for this book.
+
 ## Quick start
 
 ```bash
 cd /home/sanrpi5/Desktop/learning/edu_RAG
 
 # 1. extract, clean, chunk, index (no network, no API key)
-python -m rag.cli ingest
+python -m rag.cli ingest --pdf books/noble-warrior.pdf
 
 # 2. look at retrieval alone — no LLM involved
 python -m rag.cli search "Where was the bodhisatta born?" -k 5

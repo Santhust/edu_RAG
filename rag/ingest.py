@@ -96,7 +96,10 @@ def build_pages(settings: Settings, force: bool = False) -> list[Page]:
         return [Page(**item) for item in data]
 
     if not settings.pdf_path.exists():
-        raise FileNotFoundError(f"PDF not found: {settings.pdf_path}")
+        raise FileNotFoundError(
+            f"PDF not found: {settings.pdf_path}. "
+            "Download it (see README) and pass --pdf PATH or set RAG_PDF_PATH."
+        )
 
     raw_pages = extract_raw_pages(settings.pdf_path)
     toc = parse_toc(raw_pages)
