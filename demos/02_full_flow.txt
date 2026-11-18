@@ -1,0 +1,34 @@
+== step 1: configuration ==
+  llm=ollama/qwen2.5:3b | embed=fastembed | top_k=4 | max_tokens=300 | think=False
+  question: Where was the bodhisatta born?
+
+== step 2: prepare() ==
+  messages: 2 -> ['system', 'user']
+  system chars: 656 | user chars: 4876
+  passages: 4 -> ['c0030', 'c0032', 'c0023', 'c0031']
+  full excerpt block: see demo 01, step 7
+
+== step 3: response cache key ==
+  key: 1e92dca474f48565d78ef21c
+  file: 1e92dca474f48565d78ef21c.json | exists=False
+
+== step 4: llm.chat() ==
+  backend=ollama | model=qwen2.5:3b | cached=False
+  prompt_tokens=1520 | completion_tokens=75 | total_duration_ms=93235
+  --- answer text ---
+The bodhisatta was born into the Sakya family of the noble-warrior caste. His father was named King Suddhodana and his mother was named Queen Maya. The capital city of their lineage was Kapilavatthu, located in the northwest of the Ariyan world—the middle Ganges valley. [p. 14, Birth]
+  --- end answer text ---
+
+== step 5: finalize() -> Answer ==
+  Answer.question: Where was the bodhisatta born?
+  Answer.text: 285 chars
+  Answer.passages: 4
+  sources: [c0030, pp. 16-17, Birth] [c0032, pp. 17-18, Birth] [c0023, p. 14, Birth] [c0031, p. 17, Birth]
+
+== step 6: side effects ==
+  cache file now exists: True
+  last usage line: {"backend": "ollama", "model": "qwen2.5:3b", "cached": false, "think": false, "prompt_tokens": 1520, "completion_tokens": 75, "total_duration_ms": 93235}
+
+== step 7: second identical call ==
+  cached=True | same_text=True
+  This is why repeated experiments with the same prompt are free.

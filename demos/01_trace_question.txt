@@ -1,0 +1,118 @@
+== step 1: configuration ==
+  saved defaults: llm=ollama/qwen2.5:3b | embed=tfidf | top_k=4 | hybrid_weight=0.50
+  dense file on disk: dense-fastembed-BAAI_bge-small-en-v1.5.npy -> backend=fastembed
+  demo uses embed=fastembed so dense_path() resolves to that file
+
+== step 2: chunks ==
+  loaded 1404 chunks from chunks.jsonl
+  example: c0001 [pp. 1-2, Front matter]
+
+== step 3: lexical scores (TF-IDF cosine) ==
+  vector shape: (1404,) | min=0.00 | max=0.17 | nonzero=118
+  best chunk: c0030 [pp. 16-17, Birth]
+
+== step 4: dense scores (embedding cosine) ==
+  vector shape: (1404,) | min=0.33 | max=0.80
+  best chunk: c0023 [p. 14, Birth]
+
+== step 5: min-max fusion ==
+  lex_norm: 0.00..1.00 | dense_norm: 0.00..1.00
+  final = 0.50 * lex_norm + 0.50 * dense_norm
+  fused top-4 indices (manual argsort): [29, 31, 22, 30]
+
+== step 6: top-4 ranking for "Where was the bodhisatta born?" ==
+  lexical only:
+    1. c0030 score=0.17 [pp. 16-17, Birth]
+    2. c0032 score=0.16 [pp. 17-18, Birth]
+    3. c0031 score=0.11 [p. 17, Birth]
+    4. c0023 score=0.10 [p. 14, Birth]
+  hybrid (this is what the generator receives):
+    1. c0030 score=0.86 (lex=0.17, dense=0.67) [pp. 16-17, Birth]
+    2. c0032 score=0.83 (lex=0.16, dense=0.68) [pp. 17-18, Birth]
+    3. c0023 score=0.80 (lex=0.10, dense=0.80) [p. 14, Birth]
+    4. c0031 score=0.70 (lex=0.11, dense=0.69) [p. 17, Birth]
+
+== step 7: exact context block in the user message ==
+  system prompt: 656 chars | user message: 4876 chars
+  --- begin context ---
+[1] [pp. 16-17, Birth] (section: Birth, id: c0030)
+strung a blue, yellow, red, white, or beige thread. And then a man of good
+eyesight, taking it in his hand, would contemplate it: “This is a beryl gem,
+beautiful, radiant, eight-faceted, well cut & polished, and through it is strung
+a blue, yellow, red, white, or beige thread.” In the same way, when the
+bodhisatta had alighted in his mother’s womb, the bodhisatta’s mother
+experienced no illness. She was happy and unafflicted in body. And she saw
+the bodhisatta within her womb with all his limbs and no inferior
+faculties.’…
+    “…‘When the bodhisatta had been born seven days, the bodhisatta’s
+mother passed away and reappeared in the Tusita host.’…
+    “…‘Whereas other women give birth after nurturing the fetus in the
+womb between nine and ten lunar months, that’s not how the bodhisatta’s
+mother gave birth to the bodhisatta. After nurturing the bodhisatta in her
+womb exactly ten lunar months, the bodhisatta’s mother gave birth.’…
+    “…‘Whereas other women give birth while sitting or lying down, that’s
+not how the bodhisatta’s mother gave birth to the bodhisatta. The
+bodhisatta’s mother gave birth to the bodhisatta while standing.’…
+
+[2] [pp. 17-18, Birth] (section: Birth, id: c0032)
+mucus, unsullied by blood, unsullied by lymph: pure, very pure.’…
+    “…‘When the bodhisatta left his mother’s womb, two streams of water
+appeared from the sky—one cool, the other warm—to wash the bodhisatta
+and his mother.’…
+    “…‘As soon as the bodhisatta was born, he stood steadily with his feet on
+the ground and, facing north, took seven steps while a white parasol was
+held over him. Surveying all the directions, he made a bellowing statement:
+“I am the foremost of the world. I am chief of the world. I am the best of the
+world.”’ …
+    “In the Blessed One’s presence, lord, I have heard this, in the Blessed
+One’s presence I have learned this: ‘When the bodhisatta left his mother’s
+womb, a great, measureless radiance surpassing the effulgence of the devas
+appeared in the cosmos with its devas, Māras, & Brahmās, in this generation
+with its contemplatives & brahmans, its royalty & common people. Even in
+the intercosmic void of the unrestrained darkness, pitch-black darkness,
+where even the light of the sun & moon—so mighty, so powerful—doesn’t
+reach, even there the great, measureless radiance surpassing the effulgence
+
+[3] [p. 14, Birth] (section: Birth, id: c0023)
+PROLOGUE
+
+      Birth
+      The bodhisatta, or Buddha-to-be, was born into the Sakya family of
+   the noble-warrior caste. The Sakyan capital city, Kapilavatthu, was
+   located in the northwest of the Ariyan world—the middle Ganges
+   valley. 1 The following passage states that the bodhisatta’s father was a
+   king (rājan), but it has to be borne in mind that this title was used not
+   only by rulers who would count as “king” in the modern sense, but also
+   by the oligarchs in oligarchic republics. Other passages in the Canon
+   indicate that the Sakyan lands were actually organized as such a
+   republic, with one of the oligarchs exercising a limited rulership over
+   the others. This would mean that the bodhisatta’s father was at least a
+   member of the Sakyan ruling class, and may have acted as its chief.
+
+   “Monks, as for me in the present: My father was named King
+Suddhodana. My mother, the giver of birth, was named Queen Māyā. Our
+capital city was named Kapilavatthu.” — DN 14
+      Although the Canon’s descriptions of the bodhisatta’s early life are
+   considerably more restrained than many of the accounts found in later
+
+[4] [p. 17, Birth] (section: Birth, id: c0031)
+“…‘Whereas other women give birth while sitting or lying down, that’s
+not how the bodhisatta’s mother gave birth to the bodhisatta. The
+bodhisatta’s mother gave birth to the bodhisatta while standing.’…
+    “…‘When the bodhisatta left his mother’s womb, devas received him rst,
+and then human beings.’…
+    “…‘When the bodhisatta left his mother’s womb but before he reached
+the ground, four male devas received him and set him in front of his mother,
+(saying,) “Be grati ed, O queen. A son of great in uence has been born to
+you.”’ …
+    “…‘When the bodhisatta left his mother’s womb, he left it immaculate,
+unsullied by uid, unsullied by mucus, unsullied by blood, unsullied by
+lymph: pure, very pure. Just as when a gemstone is placed on Kāsi cloth,
+neither would the gemstone sully the cloth, nor the cloth the gemstone. Why
+is that? Because of the purity of both. In the same way, when the bodhisatta
+left his mother’s womb, he left it immaculate, unsullied by uid, unsullied by
+mucus, unsullied by blood, unsullied by lymph: pure, very pure.’…
+    “…‘When the bodhisatta left his mother’s womb, two streams of water
+appeared from the sky—one cool, the other warm—to wash the bodhisatta
+  --- end context ---
+  No LLM call here. llm.chat() would POST these two messages next.
