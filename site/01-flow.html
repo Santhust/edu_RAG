@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>01 — Follow a question · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 01</p>
+    <h1>Follow a question</h1>
+    <p class="lede">One question takes two paths through this repo: an offline build that turns a PDF into searchable chunks, and an online path that turns the question into a cited answer. This page follows the online path, stage by stage, using the real functions.</p>
+  </header>
+
+  <main>
+    <section class="worked-example">
+      <p class="eyebrow">Worked example</p>
+      <h2 class="section-title">One question, four passages</h2>
+      <p><strong>Question:</strong> “Where was the bodhisatta born?”</p>
+      <p>Retrieval scores all 1,404 chunks. These are the top four under hybrid ranking — the passages the generator will actually see:</p>
+      <div class="table-wrap">
+        <table class="score-table">
+          <thead>
+            <tr><th>#</th><th>Chunk</th><th>Fused</th><th>Lexical</th><th>Dense</th><th>Source</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>c0030</td><td>0.86</td><td>0.17</td><td>0.67</td><td>pp. 16-17, Birth</td></tr>
+            <tr><td>2</td><td>c0032</td><td>0.83</td><td>0.16</td><td>0.68</td><td>pp. 17-18, Birth</td></tr>
+            <tr><td>3</td><td>c0023</td><td>0.80</td><td>0.10</td><td>0.80</td><td>p. 14, Birth</td></tr>
+            <tr><td>4</td><td>c0031</td><td>0.70</td><td>0.11</td><td>0.69</td><td>p. 17, Birth</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Those four excerpts go into the prompt. With only them as evidence, the model answers:</p>
+      <blockquote>The bodhisatta was born into the Sakya family of the noble-warrior caste. His father was named King Suddhodana and his mother was named Queen Maya. The capital city of their lineage was Kapilavatthu, located in the northwest of the Ariyan world—the middle Ganges valley. [p. 14, Birth]</blockquote>
+      <p class="module-meta">Everything below explains how those numbers were produced. The complete traces are in demo 01 and demo 02 further down this page.</p>
+    </section>
+
+    <h2 class="section-title">What already exists before you ask</h2>
+    <p><code>ingest</code> runs once. It cleans the PDF into labelled pages (<code>pages.json</code>), slices those pages into 1,404 overlapping chunks (<code>chunks.jsonl</code>), and builds two indexes over the chunk texts: a sparse TF-IDF matrix (<code>lexical.joblib</code>) and, optionally, 384-dimensional semantic vectors (<code>dense-fastembed-BAAI_bge-small-en-v1.5.npy</code>). A question never touches the PDF; it reads these four files.</p>
+
+    <h2 class="section-title">Seven stages from question to context</h2>
+    <ol class="stages">
+      <li><strong>Settings.</strong> <code>config.py</code> merges environment variables, a JSON file and dataclass defaults. One detail matters here: the saved default says <code>embed=tfidf</code>, while the dense file on disk was built with <code>fastembed</code>. Both demos detect the backend from the filename so the trace actually shows hybrid retrieval.</li>
+      <li><strong>Chunks.</strong> The <code>Retriever</code> loads all 1,404 chunks. Every chunk carries its own page span and chapter, which is where citations come from later.</li>
+      <li><strong>Lexical scores.</strong> The question is vectorised with the saved TF-IDF vectorizer and dotted against the sparse matrix. Both vectors are length-normalised, so the result is a cosine similarity per chunk. Only 118 chunks score above zero for the example question.</li>
+      <li><strong>Dense scores.</strong> The question is embedded with <code>bge-small-en-v1.5</code> and dotted against the 1,404 × 384 matrix. Again cosine similarity, but in a 384-dimensional semantic space where related wording lands close together.</li>
+      <li><strong>Fusion.</strong> The two score ranges are very different — roughly 0.00–0.17 lexical against 0.33–0.80 dense. Adding them raw would let dense dominate, so <code>_minmax()</code> rescales each list to 0–1 separately before the 0.50 / 0.50 weighted sum. The fused numbers are relative ranks, not probabilities.</li>
+      <li><strong>Ranking.</strong> An optional chapter filter narrows the candidate indices, then <code>np.argsort(-final)[:k]</code> selects the top four.</li>
+      <li><strong>Context.</strong> <code>format_context()</code> turns those chunks into a numbered block of excerpts with their citation headers. That block becomes the user message. Nothing later can fetch more evidence.</li>
+    </ol>
+
+    <section class="demo-intro">
+      <h2 class="section-title">Demo 01 — retrieval without an LLM</h2>
+      <p>This trace prints every stage above with real numbers, including the lexical-only ranking beside the hybrid ranking. It makes no chat request, so its output is deterministic.</p>
+    </section>
+    <!--demo:01_trace_question-->
+
+    <section class="demo-intro">
+      <h2 class="section-title">From context to answer</h2>
+      <p><code>prepare()</code> wraps the excerpts in a system prompt that says: use only these excerpts, cite every sentence, say “I don't know based on the book” when unsupported, stay under 150 words. <code>llm.chat()</code> hashes the backend, model, full message list, temperature, token cap and thinking flag into a cache key. On a hit it returns the stored answer; on a miss it POSTs to Ollama or an OpenAI-compatible endpoint, caches the result and logs usage. <code>finalize()</code> packages the text, the four passages and the response metadata into an <code>Answer</code> object.</p>
+    </section>
+    <!--demo:02_full_flow-->
+
+    <h2 class="section-title">Three things worth noticing</h2>
+    <ul class="observations">
+      <li>Dense retrieval reorders the same chunks: <code>c0023</code> is fourth with lexical alone but third with hybrid, because dense gives it 0.80 while lexical gives it only 0.10.</li>
+      <li>The per-sentence citation rule and the “I don't know” fallback are prompt instructions, not Python checks. <code>evaluate.py</code> is what measures whether the model follows them.</li>
+      <li>The cache key contains the whole prompt, so changing retrieval settings, <code>k</code>, the model or the token cap forces a fresh answer. Demo 02's captured output is a snapshot: a rerun after the cache is populated shows <code>cached=True</code>.</li>
+    </ul>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>
