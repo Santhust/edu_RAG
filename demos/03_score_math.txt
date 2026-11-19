@@ -1,0 +1,144 @@
+== step 1: tokenise the toy corpus ==
+  d1: ['the', 'seer', 'saw', 'the', 'child', 'and', 'wept']
+  d2: ['the', 'seer', 'saw', 'one', 'lion', 'and', 'the', 'prince']
+  d3: ['the', 'prince', 'left', 'the', 'palace', 'and', 'the', 'seer', 'stayed']
+  vocabulary (12 terms): ['and', 'child', 'left', 'lion', 'one', 'palace', 'prince', 'saw', 'seer', 'stayed', 'the', 'wept']
+
+== step 2: term frequency ==
+  term        d1  d2  d3
+  and         1   1   1
+  child       1   0   0
+  left        0   0   1
+  lion        0   1   0
+  one         0   1   0
+  palace      0   0   1
+  prince      0   1   1
+  saw         1   1   0
+  seer        1   1   1
+  stayed      0   0   1
+  the         2   2   3
+  wept        1   0   0
+
+== step 3: document frequency and IDF (n=3) ==
+  term          df   idf = ln(n/df)
+  and           3      0.00
+  child         1      1.10
+  left          1      1.10
+  lion          1      1.10
+  one           1      1.10
+  palace        1      1.10
+  prince        2      0.41
+  saw           2      0.41
+  seer          3      0.00
+  stayed        1      1.10
+  the           3      0.00
+  wept          1      1.10
+  Terms in every document get IDF 0.00: that is the stopword effect.
+
+== step 4: raw TF-IDF weights ==
+  d1:
+    and         0.00
+    child       1.10
+    left        0.00
+    lion        0.00
+    one         0.00
+    palace      0.00
+    prince      0.00
+    saw         0.41
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        1.10
+  d2:
+    and         0.00
+    child       0.00
+    left        0.00
+    lion        1.10
+    one         1.10
+    palace      0.00
+    prince      0.41
+    saw         0.41
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.00
+  d3:
+    and         0.00
+    child       0.00
+    left        1.10
+    lion        0.00
+    one         0.00
+    palace      1.10
+    prince      0.41
+    saw         0.00
+    seer        0.00
+    stayed      1.10
+    the         0.00
+    wept        0.00
+
+== step 5: L2-normalised document vectors ==
+  d1:
+    and         0.00
+    child       0.68
+    left        0.00
+    lion        0.00
+    one         0.00
+    palace      0.00
+    prince      0.00
+    saw         0.25
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.68
+  d2:
+    and         0.00
+    child       0.00
+    left        0.00
+    lion        0.66
+    one         0.66
+    palace      0.00
+    prince      0.24
+    saw         0.24
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.00
+  d3:
+    and         0.00
+    child       0.00
+    left        0.56
+    lion        0.00
+    one         0.00
+    palace      0.56
+    prince      0.21
+    saw         0.00
+    seer        0.00
+    stayed      0.56
+    the         0.00
+    wept        0.00
+
+== step 6: query vector ==
+  query: ['seer', 'wept', 'prince']
+  normalised query:
+    and         0.00
+    child       0.00
+    left        0.00
+    lion        0.00
+    one         0.00
+    palace      0.00
+    prince      0.35
+    saw         0.00
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.94
+  'seer' appears in all three documents, so its IDF is zero and it vanishes.
+
+== step 7: cosine similarity and ranking ==
+  d1: dot(normalised document, normalised query) = 0.64
+  d2: dot(normalised document, normalised query) = 0.08
+  d3: dot(normalised document, normalised query) = 0.07
+  1. d1  score=0.64
+  2. d2  score=0.08
+  3. d3  score=0.07
+  Both vectors have length one, so the dot product IS the cosine similarity.
