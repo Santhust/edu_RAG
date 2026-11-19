@@ -4,3 +4,4 @@ books/
 *.pdf
 __pycache__/
 *.pyc
+.hermes/
