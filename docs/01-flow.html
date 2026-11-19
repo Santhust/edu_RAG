@@ -14,51 +14,16 @@
   </header>
 
   <main>
-    <section class="worked-example">
-      <p class="eyebrow">Worked example</p>
-      <h2 class="section-title">One question, four passages</h2>
-      <p><strong>Question:</strong> “Where was the bodhisatta born?”</p>
-      <p>Retrieval scores all 1,404 chunks. These are the top four under hybrid ranking — the passages the generator will actually see:</p>
-      <div class="table-wrap">
-        <table class="score-table">
-          <thead>
-            <tr><th>#</th><th>Chunk</th><th>Fused</th><th>Lexical</th><th>Dense</th><th>Source</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>1</td><td>c0030</td><td>0.86</td><td>0.17</td><td>0.67</td><td>pp. 16-17, Birth</td></tr>
-            <tr><td>2</td><td>c0032</td><td>0.83</td><td>0.16</td><td>0.68</td><td>pp. 17-18, Birth</td></tr>
-            <tr><td>3</td><td>c0023</td><td>0.80</td><td>0.10</td><td>0.80</td><td>p. 14, Birth</td></tr>
-            <tr><td>4</td><td>c0031</td><td>0.70</td><td>0.11</td><td>0.69</td><td>p. 17, Birth</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>Those four excerpts go into the prompt. With only them as evidence, the model answers:</p>
-      <blockquote>The bodhisatta was born into the Sakya family of the noble-warrior caste. His father was named King Suddhodana and his mother was named Queen Maya. The capital city of their lineage was Kapilavatthu, located in the northwest of the Ariyan world—the middle Ganges valley. [p. 14, Birth]</blockquote>
-      <p class="module-meta">Everything below explains how those numbers were produced. The complete traces are in demo 01 and demo 02 further down this page.</p>
-    </section>
-
-    <h2 class="section-title">What already exists before you ask</h2>
-    <p><code>ingest</code> runs once. It cleans the PDF into labelled pages (<code>pages.json</code>), slices those pages into 1,404 overlapping chunks (<code>chunks.jsonl</code>), and builds two indexes over the chunk texts: a sparse TF-IDF matrix (<code>lexical.joblib</code>) and, optionally, 384-dimensional semantic vectors (<code>dense-fastembed-BAAI_bge-small-en-v1.5.npy</code>). A question never touches the PDF; it reads these four files.</p>
-
-    <h2 class="section-title">Seven stages from question to context</h2>
-    <ol class="stages">
-      <li><strong>Settings.</strong> <code>config.py</code> merges environment variables, a JSON file and dataclass defaults. One detail matters here: the saved default says <code>embed=tfidf</code>, while the dense file on disk was built with <code>fastembed</code>. Both demos detect the backend from the filename so the trace actually shows hybrid retrieval.</li>
-      <li><strong>Chunks.</strong> The <code>Retriever</code> loads all 1,404 chunks. Every chunk carries its own page span and chapter, which is where citations come from later.</li>
-      <li><strong>Lexical scores.</strong> The question is vectorised with the saved TF-IDF vectorizer and dotted against the sparse matrix. Both vectors are length-normalised, so the result is a cosine similarity per chunk. Only 118 chunks score above zero for the example question.</li>
-      <li><strong>Dense scores.</strong> The question is embedded with <code>bge-small-en-v1.5</code> and dotted against the 1,404 × 384 matrix. Again cosine similarity, but in a 384-dimensional semantic space where related wording lands close together.</li>
-      <li><strong>Fusion.</strong> The two score ranges are very different — roughly 0.00–0.17 lexical against 0.33–0.80 dense. Adding them raw would let dense dominate, so <code>_minmax()</code> rescales each list to 0–1 separately before the 0.50 / 0.50 weighted sum. The fused numbers are relative ranks, not probabilities.</li>
-      <li><strong>Ranking.</strong> An optional chapter filter narrows the candidate indices, then <code>np.argsort(-final)[:k]</code> selects the top four.</li>
-      <li><strong>Context.</strong> <code>format_context()</code> turns those chunks into a numbered block of excerpts with their citation headers. That block becomes the user message. Nothing later can fetch more evidence.</li>
-    </ol>
-
     <section class="demo-intro">
-      <h2 class="section-title">Demo 01 — retrieval without an LLM</h2>
-      <p>This trace prints every stage above with real numbers, including the lexical-only ranking beside the hybrid ranking. It makes no chat request, so its output is deterministic.</p>
+      <h2 class="section-title">Worked example — one question, seven steps</h2>
+      <p><strong>Question:</strong> “Where was the bodhisatta born?”</p>
+      <p>This is the real trace from demo 01, not a retelling. Each step below is expandable; the long ones start collapsed. Open step 7 to see the exact excerpt block that becomes the prompt.</p>
     </section>
     <section class="demo">
   <h2>01_trace_question</h2>
-  <h3>Source</h3>
-  <pre><code class="language-python">&quot;&quot;&quot;Trace one question through retrieval without calling an LLM.
+  <details class="demo-source">
+    <summary>Source: 01_trace_question.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;Trace one question through retrieval without calling an LLM.
 
 Step 1: read saved Settings, then find the dense index actually on disk.
 Step 2: load the chunks that every score refers back to.
@@ -74,137 +39,149 @@ Run from the repo root:
 
 Scores are cosine similarities rounded to 2 decimals for readability.
 Fused scores are relative ranks, not probabilities. No chat model is called.
-&quot;&quot;&quot;
+&quot;&quot;&quot;</span>
 
-import sys
-from pathlib import Path
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
 
-import numpy as np
+<span class="tok-keyword">import</span> numpy <span class="tok-keyword">as</span> np
 
-from rag.config import Settings
-from rag.generate import SYSTEM_WITH_CONTEXT, format_context
-from rag.index import DenseIndex, LexicalIndex
-from rag.retrieve import Retriever, _minmax
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+<span class="tok-keyword">from</span> rag.generate <span class="tok-keyword">import</span> SYSTEM_WITH_CONTEXT, format_context
+<span class="tok-keyword">from</span> rag.index <span class="tok-keyword">import</span> DenseIndex, LexicalIndex
+<span class="tok-keyword">from</span> rag.retrieve <span class="tok-keyword">import</span> Retriever, _minmax
 
-QUESTION = sys.argv[1] if len(sys.argv) &gt; 1 else &quot;Where was the bodhisatta born?&quot;
+QUESTION = sys.argv[<span class="tok-number">1</span>] <span class="tok-keyword">if</span> <span class="tok-builtin">len</span>(sys.argv) &gt; <span class="tok-number">1</span> <span class="tok-keyword">else</span> <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
 
 settings = Settings.load()
-print(&quot;== step 1: configuration ==&quot;)
-print(
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: configuration ==&quot;</span>)
+<span class="tok-builtin">print</span>(
     f&quot;  saved defaults: llm={settings.llm_backend}/{settings.llm_model} | &quot;
     f&quot;embed={settings.embed_backend} | top_k={settings.top_k} | &quot;
     f&quot;hybrid_weight={settings.hybrid_weight:.2f}&quot;
 )
 
-dense_files = sorted(settings.index_dir.glob(&quot;dense-*.npy&quot;))
-has_dense = bool(dense_files)
-if has_dense:
-    backend = dense_files[0].stem.removeprefix(&quot;dense-&quot;).split(&quot;-&quot;)[0]
-    print(f&quot;  dense file on disk: {dense_files[0].name} -&gt; backend={backend}&quot;)
+dense_files = <span class="tok-builtin">sorted</span>(settings.index_dir.glob(<span class="tok-string">&quot;dense-*.npy&quot;</span>))
+has_dense = <span class="tok-builtin">bool</span>(dense_files)
+<span class="tok-keyword">if</span> has_dense:
+    backend = dense_files[<span class="tok-number">0</span>].stem.removeprefix(<span class="tok-string">&quot;dense-&quot;</span>).split(<span class="tok-string">&quot;-&quot;</span>)[<span class="tok-number">0</span>]
+    <span class="tok-builtin">print</span>(f&quot;  dense file on disk: {dense_files[<span class="tok-number">0</span>].name} -&gt; backend={backend}&quot;)
     settings = settings.overrides(embed_backend=backend)
-    print(f&quot;  demo uses embed={settings.embed_backend} so dense_path() resolves to that file&quot;)
-else:
-    print(&quot;  no dense-*.npy found: this demo will run lexical only&quot;)
+    <span class="tok-builtin">print</span>(f&quot;  demo uses embed={settings.embed_backend} so dense_path() resolves to that file&quot;)
+<span class="tok-keyword">else</span>:
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;  no dense-*.npy found: this demo will run lexical only&quot;</span>)
 
 retriever = Retriever(settings)
 chunks = retriever.chunks
-print(&quot;\n== step 2: chunks ==&quot;)
-print(f&quot;  loaded {len(chunks)} chunks from {settings.chunks_path.name}&quot;)
-print(f&quot;  example: {chunks[0].id} [{chunks[0].citation}]&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: chunks ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  loaded {<span class="tok-builtin">len</span>(chunks)} chunks from {settings.chunks_path.name}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  example: {chunks[<span class="tok-number">0</span>].<span class="tok-builtin">id</span>} [{chunks[<span class="tok-number">0</span>].citation}]&quot;)
 
 lexical = LexicalIndex(settings).load()
 lex_scores = lexical.scores(QUESTION)
-best_lex = int(lex_scores.argmax())
-print(&quot;\n== step 3: lexical scores (TF-IDF cosine) ==&quot;)
-print(
-    f&quot;  vector shape: {lex_scores.shape} | min={lex_scores.min():.2f} | &quot;
-    f&quot;max={lex_scores.max():.2f} | nonzero={int((lex_scores &gt; 0).sum())}&quot;
+best_lex = <span class="tok-builtin">int</span>(lex_scores.argmax())
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 3: lexical scores (TF-IDF cosine) ==&quot;</span>)
+<span class="tok-builtin">print</span>(
+    f&quot;  vector shape: {lex_scores.shape} | min={lex_scores.<span class="tok-builtin">min</span>():.2f} | &quot;
+    f&quot;max={lex_scores.<span class="tok-builtin">max</span>():.2f} | nonzero={<span class="tok-builtin">int</span>((lex_scores &gt; <span class="tok-number">0</span>).<span class="tok-builtin">sum</span>())}&quot;
 )
-print(f&quot;  best chunk: {chunks[best_lex].id} [{chunks[best_lex].citation}]&quot;)
+<span class="tok-builtin">print</span>(f&quot;  best chunk: {chunks[best_lex].<span class="tok-builtin">id</span>} [{chunks[best_lex].citation}]&quot;)
 
-if has_dense:
+<span class="tok-keyword">if</span> has_dense:
     dense = DenseIndex(settings).load()
     dense_scores = dense.scores(QUESTION)
-    best_dense = int(dense_scores.argmax())
-    print(&quot;\n== step 4: dense scores (embedding cosine) ==&quot;)
-    print(
-        f&quot;  vector shape: {dense_scores.shape} | min={dense_scores.min():.2f} | &quot;
-        f&quot;max={dense_scores.max():.2f}&quot;
+    best_dense = <span class="tok-builtin">int</span>(dense_scores.argmax())
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: dense scores (embedding cosine) ==&quot;</span>)
+    <span class="tok-builtin">print</span>(
+        f&quot;  vector shape: {dense_scores.shape} | min={dense_scores.<span class="tok-builtin">min</span>():.2f} | &quot;
+        f&quot;max={dense_scores.<span class="tok-builtin">max</span>():.2f}&quot;
     )
-    print(f&quot;  best chunk: {chunks[best_dense].id} [{chunks[best_dense].citation}]&quot;)
-else:
-    dense_scores = None
-    print(&quot;\n== step 4: dense scores ==&quot;)
-    print(&quot;  skipped: no dense index file for this embed backend&quot;)
+    <span class="tok-builtin">print</span>(f&quot;  best chunk: {chunks[best_dense].<span class="tok-builtin">id</span>} [{chunks[best_dense].citation}]&quot;)
+<span class="tok-keyword">else</span>:
+    dense_scores = <span class="tok-keyword">None</span>
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: dense scores ==&quot;</span>)
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;  skipped: no dense index file for this embed backend&quot;</span>)
 
 k = settings.top_k
-if dense_scores is None:
+<span class="tok-keyword">if</span> dense_scores <span class="tok-keyword">is</span> <span class="tok-keyword">None</span>:
     final = lex_scores
-    print(&quot;\n== step 5: no fusion; lexical scores are the final scores ==&quot;)
-else:
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: no fusion; lexical scores are the final scores ==&quot;</span>)
+<span class="tok-keyword">else</span>:
     lex_norm = _minmax(lex_scores)
     dense_norm = _minmax(dense_scores)
     weight = settings.hybrid_weight
-    final = (1 - weight) * lex_norm + weight * dense_norm
-    print(&quot;\n== step 5: min-max fusion ==&quot;)
-    print(
-        f&quot;  lex_norm: {lex_norm.min():.2f}..{lex_norm.max():.2f} | &quot;
-        f&quot;dense_norm: {dense_norm.min():.2f}..{dense_norm.max():.2f}&quot;
+    final = (<span class="tok-number">1</span> - weight) * lex_norm + weight * dense_norm
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: min-max fusion ==&quot;</span>)
+    <span class="tok-builtin">print</span>(
+        f&quot;  lex_norm: {lex_norm.<span class="tok-builtin">min</span>():.2f}..{lex_norm.<span class="tok-builtin">max</span>():.2f} | &quot;
+        f&quot;dense_norm: {dense_norm.<span class="tok-builtin">min</span>():.2f}..{dense_norm.<span class="tok-builtin">max</span>():.2f}&quot;
     )
-    print(f&quot;  final = {1 - weight:.2f} * lex_norm + {weight:.2f} * dense_norm&quot;)
-print(f&quot;  fused top-{k} indices (manual argsort): {np.argsort(-final)[:k].tolist()}&quot;)
+    <span class="tok-builtin">print</span>(f&quot;  final = {<span class="tok-number">1</span> - weight:.2f} * lex_norm + {weight:.2f} * dense_norm&quot;)
+<span class="tok-builtin">print</span>(f&quot;  fused top-{k} indices (manual argsort): {np.argsort(-final)[:k].tolist()}&quot;)
 
-lexical_results = retriever.search(QUESTION, k=k, mode=&quot;lexical&quot;)
-mode = &quot;hybrid&quot; if has_dense else &quot;lexical&quot;
+lexical_results = retriever.search(QUESTION, k=k, mode=<span class="tok-string">&quot;lexical&quot;</span>)
+mode = <span class="tok-string">&quot;hybrid&quot;</span> <span class="tok-keyword">if</span> has_dense <span class="tok-keyword">else</span> <span class="tok-string">&quot;lexical&quot;</span>
 results = retriever.search(QUESTION, k=k, mode=mode)
-print(f&quot;\n== step 6: top-{k} ranking for \&quot;{QUESTION}\&quot; ==&quot;)
-print(&quot;  lexical only:&quot;)
-for rank, item in enumerate(lexical_results, start=1):
-    print(f&quot;    {rank}. {item.chunk.id} score={item.score:.2f} [{item.chunk.citation}]&quot;)
-print(f&quot;  {mode} (this is what the generator receives):&quot;)
-for rank, item in enumerate(results, start=1):
-    dense_text = &quot;-&quot; if item.dense is None else f&quot;{item.dense:.2f}&quot;
-    print(
-        f&quot;    {rank}. {item.chunk.id} score={item.score:.2f} &quot;
+<span class="tok-builtin">print</span>(f&quot;\n== step 6: top-{k} ranking for \&quot;{QUESTION}\&quot; ==&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  lexical only:&quot;</span>)
+<span class="tok-keyword">for</span> rank, item <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(lexical_results, start=<span class="tok-number">1</span>):
+    <span class="tok-builtin">print</span>(f&quot;    {rank}. {item.chunk.<span class="tok-builtin">id</span>} score={item.score:.2f} [{item.chunk.citation}]&quot;)
+<span class="tok-builtin">print</span>(f&quot;  {mode} (this is what the generator receives):&quot;)
+<span class="tok-keyword">for</span> rank, item <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(results, start=<span class="tok-number">1</span>):
+    dense_text = <span class="tok-string">&quot;-&quot;</span> <span class="tok-keyword">if</span> item.dense <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> f&quot;{item.dense:.2f}&quot;
+    <span class="tok-builtin">print</span>(
+        f&quot;    {rank}. {item.chunk.<span class="tok-builtin">id</span>} score={item.score:.2f} &quot;
         f&quot;(lex={item.lexical:.2f}, dense={dense_text}) [{item.chunk.citation}]&quot;
     )
 
 context = format_context(results)
 user_message = f&quot;Question: {QUESTION}\n\nExcerpts:\n{context}&quot;
-print(&quot;\n== step 7: exact context block in the user message ==&quot;)
-print(f&quot;  system prompt: {len(SYSTEM_WITH_CONTEXT)} chars | user message: {len(user_message)} chars&quot;)
-print(&quot;  --- begin context ---&quot;)
-print(context)
-print(&quot;  --- end context ---&quot;)
-print(&quot;  No LLM call here. llm.chat() would POST these two messages next.&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 7: exact context block in the user message ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  system prompt: {<span class="tok-builtin">len</span>(SYSTEM_WITH_CONTEXT)} chars | user message: {<span class="tok-builtin">len</span>(user_message)} chars&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  --- begin context ---&quot;</span>)
+<span class="tok-builtin">print</span>(context)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  --- end context ---&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  No LLM call here. llm.chat() would POST these two messages next.&quot;</span>)
 </code></pre>
-  <h3>Captured output</h3>
-  <pre>== step 1: configuration ==
-  saved defaults: llm=ollama/qwen2.5:3b | embed=tfidf | top_k=4 | hybrid_weight=0.50
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: configuration</summary>
+  <pre>  saved defaults: llm=ollama/qwen2.5:3b | embed=tfidf | top_k=4 | hybrid_weight=0.50
   dense file on disk: dense-fastembed-BAAI_bge-small-en-v1.5.npy -&gt; backend=fastembed
-  demo uses embed=fastembed so dense_path() resolves to that file
+  demo uses embed=fastembed so dense_path() resolves to that file</pre>
+</details>
 
-== step 2: chunks ==
-  loaded 1404 chunks from chunks.jsonl
-  example: c0001 [pp. 1-2, Front matter]
+<details class="trace-step" open>
+  <summary>step 2: chunks</summary>
+  <pre>  loaded 1404 chunks from chunks.jsonl
+  example: c0001 [pp. 1-2, Front matter]</pre>
+</details>
 
-== step 3: lexical scores (TF-IDF cosine) ==
-  vector shape: (1404,) | min=0.00 | max=0.17 | nonzero=118
-  best chunk: c0030 [pp. 16-17, Birth]
+<details class="trace-step" open>
+  <summary>step 3: lexical scores (TF-IDF cosine)</summary>
+  <pre>  vector shape: (1404,) | min=0.00 | max=0.17 | nonzero=118
+  best chunk: c0030 [pp. 16-17, Birth]</pre>
+</details>
 
-== step 4: dense scores (embedding cosine) ==
-  vector shape: (1404,) | min=0.33 | max=0.80
-  best chunk: c0023 [p. 14, Birth]
+<details class="trace-step" open>
+  <summary>step 4: dense scores (embedding cosine)</summary>
+  <pre>  vector shape: (1404,) | min=0.33 | max=0.80
+  best chunk: c0023 [p. 14, Birth]</pre>
+</details>
 
-== step 5: min-max fusion ==
-  lex_norm: 0.00..1.00 | dense_norm: 0.00..1.00
+<details class="trace-step" open>
+  <summary>step 5: min-max fusion</summary>
+  <pre>  lex_norm: 0.00..1.00 | dense_norm: 0.00..1.00
   final = 0.50 * lex_norm + 0.50 * dense_norm
-  fused top-4 indices (manual argsort): [29, 31, 22, 30]
+  fused top-4 indices (manual argsort): [29, 31, 22, 30]</pre>
+</details>
 
-== step 6: top-4 ranking for &quot;Where was the bodhisatta born?&quot; ==
-  lexical only:
+<details class="trace-step" open>
+  <summary>step 6: top-4 ranking for &quot;Where was the bodhisatta born?&quot;</summary>
+  <pre>  lexical only:
     1. c0030 score=0.17 [pp. 16-17, Birth]
     2. c0032 score=0.16 [pp. 17-18, Birth]
     3. c0031 score=0.11 [p. 17, Birth]
@@ -213,10 +190,12 @@ print(&quot;  No LLM call here. llm.chat() would POST these two messages next.&q
     1. c0030 score=0.86 (lex=0.17, dense=0.67) [pp. 16-17, Birth]
     2. c0032 score=0.83 (lex=0.16, dense=0.68) [pp. 17-18, Birth]
     3. c0023 score=0.80 (lex=0.10, dense=0.80) [p. 14, Birth]
-    4. c0031 score=0.70 (lex=0.11, dense=0.69) [p. 17, Birth]
+    4. c0031 score=0.70 (lex=0.11, dense=0.69) [p. 17, Birth]</pre>
+</details>
 
-== step 7: exact context block in the user message ==
-  system prompt: 656 chars | user message: 4876 chars
+<details class="trace-step">
+  <summary>step 7: exact context block in the user message</summary>
+  <pre>  system prompt: 656 chars | user message: 4876 chars
   --- begin context ---
 [1] [pp. 16-17, Birth] (section: Birth, id: c0030)
 strung a blue, yellow, red, white, or beige thread. And then a man of good
@@ -298,11 +277,26 @@ mucus, unsullied by blood, unsullied by lymph: pure, very pure.’…
     “…‘When the bodhisatta left his mother’s womb, two streams of water
 appeared from the sky—one cool, the other warm—to wash the bodhisatta
   --- end context ---
-  No LLM call here. llm.chat() would POST these two messages next.
-</pre>
+  No LLM call here. llm.chat() would POST these two messages next.</pre>
+</details>
+
   <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/01_trace_question.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/01_trace_question.txt">output on GitHub</a></p>
 </section>
 
+
+    <h2 class="section-title">What already exists before you ask</h2>
+    <p><code>ingest</code> runs once. It cleans the PDF into labelled pages (<code>pages.json</code>), slices those pages into 1,404 overlapping chunks (<code>chunks.jsonl</code>), and builds two indexes over the chunk texts: a sparse TF-IDF matrix (<code>lexical.joblib</code>) and, optionally, 384-dimensional semantic vectors (<code>dense-fastembed-BAAI_bge-small-en-v1.5.npy</code>). A question never touches the PDF; it reads these four files.</p>
+
+    <h2 class="section-title">Seven stages from question to context</h2>
+    <ol class="stages">
+      <li><strong>Settings.</strong> <code>config.py</code> merges environment variables, a JSON file and dataclass defaults. One detail matters here: the saved default says <code>embed=tfidf</code>, while the dense file on disk was built with <code>fastembed</code>. Both demos detect the backend from the filename so the trace actually shows hybrid retrieval.</li>
+      <li><strong>Chunks.</strong> The <code>Retriever</code> loads all 1,404 chunks. Every chunk carries its own page span and chapter, which is where citations come from later.</li>
+      <li><strong>Lexical scores.</strong> The question is vectorised with the saved TF-IDF vectorizer and dotted against the sparse matrix. Both vectors are length-normalised, so the result is a cosine similarity per chunk. Only 118 chunks score above zero for the example question.</li>
+      <li><strong>Dense scores.</strong> The question is embedded with <code>bge-small-en-v1.5</code> and dotted against the 1,404 × 384 matrix. Again cosine similarity, but in a 384-dimensional semantic space where related wording lands close together.</li>
+      <li><strong>Fusion.</strong> The two score ranges are very different — roughly 0.00–0.17 lexical against 0.33–0.80 dense. Adding them raw would let dense dominate, so <code>_minmax()</code> rescales each list to 0–1 separately before the 0.50 / 0.50 weighted sum. The fused numbers are relative ranks, not probabilities.</li>
+      <li><strong>Ranking.</strong> An optional chapter filter narrows the candidate indices, then <code>np.argsort(-final)[:k]</code> selects the top four.</li>
+      <li><strong>Context.</strong> <code>format_context()</code> turns those chunks into a numbered block of excerpts with their citation headers. That block becomes the user message. Nothing later can fetch more evidence.</li>
+    </ol>
 
     <section class="demo-intro">
       <h2 class="section-title">From context to answer</h2>
@@ -310,8 +304,9 @@ appeared from the sky—one cool, the other warm—to wash the bodhisatta
     </section>
     <section class="demo">
   <h2>02_full_flow</h2>
-  <h3>Source</h3>
-  <pre><code class="language-python">&quot;&quot;&quot;Follow one question all the way to an Answer object, LLM call included.
+  <details class="demo-source">
+    <summary>Source: 02_full_flow.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;Follow one question all the way to an Answer object, LLM call included.
 
 Step 1: load Settings and detect the dense backend, as in demo 01.
 Step 2: prepare() -&gt; messages + passages; the retrieval-to-generation hand-off.
@@ -329,125 +324,140 @@ The .txt beside this file is a snapshot: answer text depends on the model
 and on cache state, so a rerun after a cache miss will differ. The demo caps
 max_tokens at 300 to keep the CPU-only run short; that also changes the cache
 key, so this entry is separate from a normal `ask`. Numbers print at 2 decimals.
-&quot;&quot;&quot;
+&quot;&quot;&quot;</span>
 
-import sys
-from pathlib import Path
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
 
-from rag import llm
-from rag.config import Settings
-from rag.generate import finalize, prepare
-from rag.retrieve import Retriever
+<span class="tok-keyword">from</span> rag <span class="tok-keyword">import</span> llm
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+<span class="tok-keyword">from</span> rag.generate <span class="tok-keyword">import</span> finalize, prepare
+<span class="tok-keyword">from</span> rag.retrieve <span class="tok-keyword">import</span> Retriever
 
-QUESTION = sys.argv[1] if len(sys.argv) &gt; 1 else &quot;Where was the bodhisatta born?&quot;
+QUESTION = sys.argv[<span class="tok-number">1</span>] <span class="tok-keyword">if</span> <span class="tok-builtin">len</span>(sys.argv) &gt; <span class="tok-number">1</span> <span class="tok-keyword">else</span> <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
 
 settings = Settings.load()
-dense_files = sorted(settings.index_dir.glob(&quot;dense-*.npy&quot;))
-if dense_files:
-    backend = dense_files[0].stem.removeprefix(&quot;dense-&quot;).split(&quot;-&quot;)[0]
-    settings = settings.overrides(embed_backend=backend, max_tokens=300)
+dense_files = <span class="tok-builtin">sorted</span>(settings.index_dir.glob(<span class="tok-string">&quot;dense-*.npy&quot;</span>))
+<span class="tok-keyword">if</span> dense_files:
+    backend = dense_files[<span class="tok-number">0</span>].stem.removeprefix(<span class="tok-string">&quot;dense-&quot;</span>).split(<span class="tok-string">&quot;-&quot;</span>)[<span class="tok-number">0</span>]
+    settings = settings.overrides(embed_backend=backend, max_tokens=<span class="tok-number">300</span>)
 
-print(&quot;== step 1: configuration ==&quot;)
-print(
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: configuration ==&quot;</span>)
+<span class="tok-builtin">print</span>(
     f&quot;  llm={settings.llm_backend}/{settings.llm_model} | &quot;
     f&quot;embed={settings.embed_backend} | top_k={settings.top_k} | &quot;
     f&quot;max_tokens={settings.max_tokens} | think={settings.think}&quot;
 )
-print(f&quot;  question: {QUESTION}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  question: {QUESTION}&quot;)
 
 retriever = Retriever(settings)
 messages, passages = prepare(QUESTION, retriever, settings)
-print(&quot;\n== step 2: prepare() ==&quot;)
-print(f&quot;  messages: {len(messages)} -&gt; {[m[&#x27;role&#x27;] for m in messages]}&quot;)
-print(
-    f&quot;  system chars: {len(messages[0][&#x27;content&#x27;])} | &quot;
-    f&quot;user chars: {len(messages[1][&#x27;content&#x27;])}&quot;
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: prepare() ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  messages: {<span class="tok-builtin">len</span>(messages)} -&gt; {[m[<span class="tok-string">&#x27;role&#x27;</span>] <span class="tok-keyword">for</span> m <span class="tok-keyword">in</span> messages]}&quot;)
+<span class="tok-builtin">print</span>(
+    f&quot;  system chars: {<span class="tok-builtin">len</span>(messages[<span class="tok-number">0</span>][<span class="tok-string">&#x27;content&#x27;</span>])} | &quot;
+    f&quot;user chars: {<span class="tok-builtin">len</span>(messages[<span class="tok-number">1</span>][<span class="tok-string">&#x27;content&#x27;</span>])}&quot;
 )
-print(f&quot;  passages: {len(passages)} -&gt; {[p.chunk.id for p in passages]}&quot;)
-print(&quot;  full excerpt block: see demo 01, step 7&quot;)
+<span class="tok-builtin">print</span>(f&quot;  passages: {<span class="tok-builtin">len</span>(passages)} -&gt; {[p.chunk.<span class="tok-builtin">id</span> <span class="tok-keyword">for</span> p <span class="tok-keyword">in</span> passages]}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  full excerpt block: see demo 01, step 7&quot;</span>)
 
 key = llm._cache_key(settings, messages)
 cache_file = llm._cache_file(settings, key)
-print(&quot;\n== step 3: response cache key ==&quot;)
-print(f&quot;  key: {key}&quot;)
-print(f&quot;  file: {cache_file.name} | exists={cache_file.exists()}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 3: response cache key ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  key: {key}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  file: {cache_file.name} | exists={cache_file.exists()}&quot;)
 
-print(&quot;\n== step 4: llm.chat() ==&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: llm.chat() ==&quot;</span>)
 response = llm.chat(settings, messages)
-assert isinstance(response, llm.LLMResponse)  # stream=False returns LLMResponse, not deltas
+<span class="tok-keyword">assert</span> <span class="tok-builtin">isinstance</span>(response, llm.LLMResponse)  <span class="tok-comment"># stream=False returns LLMResponse, not deltas</span>
 usage = response.usage
-print(
+<span class="tok-builtin">print</span>(
     f&quot;  backend={response.backend} | model={response.model} | &quot;
     f&quot;cached={response.cached}&quot;
 )
-print(
-    f&quot;  prompt_tokens={usage.get(&#x27;prompt_tokens&#x27;, 0)} | &quot;
-    f&quot;completion_tokens={usage.get(&#x27;completion_tokens&#x27;, 0)} | &quot;
-    f&quot;total_duration_ms={usage.get(&#x27;total_duration_ms&#x27;, 0)}&quot;
+<span class="tok-builtin">print</span>(
+    f&quot;  prompt_tokens={usage.get(<span class="tok-string">&#x27;prompt_tokens&#x27;</span>, <span class="tok-number">0</span>)} | &quot;
+    f&quot;completion_tokens={usage.get(<span class="tok-string">&#x27;completion_tokens&#x27;</span>, <span class="tok-number">0</span>)} | &quot;
+    f&quot;total_duration_ms={usage.get(<span class="tok-string">&#x27;total_duration_ms&#x27;</span>, <span class="tok-number">0</span>)}&quot;
 )
-print(&quot;  --- answer text ---&quot;)
-print(response.text)
-print(&quot;  --- end answer text ---&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  --- answer text ---&quot;</span>)
+<span class="tok-builtin">print</span>(response.text)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  --- end answer text ---&quot;</span>)
 
 result = finalize(QUESTION, response.text, passages, response)
-print(&quot;\n== step 5: finalize() -&gt; Answer ==&quot;)
-print(f&quot;  Answer.question: {result.question}&quot;)
-print(f&quot;  Answer.text: {len(result.text)} chars&quot;)
-print(f&quot;  Answer.passages: {len(result.passages)}&quot;)
-print(&quot;  sources: &quot; + &quot; &quot;.join(f&quot;[{p.chunk.id}, {p.chunk.citation}]&quot; for p in result.passages))
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: finalize() -&gt; Answer ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  Answer.question: {result.question}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  Answer.text: {<span class="tok-builtin">len</span>(result.text)} chars&quot;)
+<span class="tok-builtin">print</span>(f&quot;  Answer.passages: {<span class="tok-builtin">len</span>(result.passages)}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  sources: &quot;</span> + <span class="tok-string">&quot; &quot;</span>.join(f&quot;[{p.chunk.<span class="tok-builtin">id</span>}, {p.chunk.citation}]&quot; <span class="tok-keyword">for</span> p <span class="tok-keyword">in</span> result.passages))
 
-print(&quot;\n== step 6: side effects ==&quot;)
-print(f&quot;  cache file now exists: {cache_file.exists()}&quot;)
-usage_path = settings.cache_dir / &quot;usage.jsonl&quot;
-last_line = usage_path.read_text(encoding=&quot;utf-8&quot;).splitlines()[-1]
-print(f&quot;  last usage line: {last_line}&quot;)
-if response.cached:
-    print(&quot;  cached responses skip usage logging; that line is from an earlier call&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 6: side effects ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  cache file now exists: {cache_file.exists()}&quot;)
+usage_path = settings.cache_dir / <span class="tok-string">&quot;usage.jsonl&quot;</span>
+last_line = usage_path.read_text(encoding=<span class="tok-string">&quot;utf-8&quot;</span>).splitlines()[-<span class="tok-number">1</span>]
+<span class="tok-builtin">print</span>(f&quot;  last usage line: {last_line}&quot;)
+<span class="tok-keyword">if</span> response.cached:
+    <span class="tok-builtin">print</span>(<span class="tok-string">&quot;  cached responses skip usage logging; that line is from an earlier call&quot;</span>)
 
 again = llm.chat(settings, messages)
-assert isinstance(again, llm.LLMResponse)
-print(&quot;\n== step 7: second identical call ==&quot;)
-print(f&quot;  cached={again.cached} | same_text={again.text == response.text}&quot;)
-print(&quot;  This is why repeated experiments with the same prompt are free.&quot;)
+<span class="tok-keyword">assert</span> <span class="tok-builtin">isinstance</span>(again, llm.LLMResponse)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 7: second identical call ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  cached={again.cached} | same_text={again.text == response.text}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  This is why repeated experiments with the same prompt are free.&quot;</span>)
 </code></pre>
-  <h3>Captured output</h3>
-  <pre>== step 1: configuration ==
-  llm=ollama/qwen2.5:3b | embed=fastembed | top_k=4 | max_tokens=300 | think=False
-  question: Where was the bodhisatta born?
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: configuration</summary>
+  <pre>  llm=ollama/qwen2.5:3b | embed=fastembed | top_k=4 | max_tokens=300 | think=False
+  question: Where was the bodhisatta born?</pre>
+</details>
 
-== step 2: prepare() ==
-  messages: 2 -&gt; [&#x27;system&#x27;, &#x27;user&#x27;]
+<details class="trace-step" open>
+  <summary>step 2: prepare()</summary>
+  <pre>  messages: 2 -&gt; [&#x27;system&#x27;, &#x27;user&#x27;]
   system chars: 656 | user chars: 4876
   passages: 4 -&gt; [&#x27;c0030&#x27;, &#x27;c0032&#x27;, &#x27;c0023&#x27;, &#x27;c0031&#x27;]
-  full excerpt block: see demo 01, step 7
+  full excerpt block: see demo 01, step 7</pre>
+</details>
 
-== step 3: response cache key ==
-  key: 1e92dca474f48565d78ef21c
-  file: 1e92dca474f48565d78ef21c.json | exists=False
+<details class="trace-step" open>
+  <summary>step 3: response cache key</summary>
+  <pre>  key: 1e92dca474f48565d78ef21c
+  file: 1e92dca474f48565d78ef21c.json | exists=False</pre>
+</details>
 
-== step 4: llm.chat() ==
-  backend=ollama | model=qwen2.5:3b | cached=False
+<details class="trace-step" open>
+  <summary>step 4: llm.chat()</summary>
+  <pre>  backend=ollama | model=qwen2.5:3b | cached=False
   prompt_tokens=1520 | completion_tokens=75 | total_duration_ms=93235
   --- answer text ---
 The bodhisatta was born into the Sakya family of the noble-warrior caste. His father was named King Suddhodana and his mother was named Queen Maya. The capital city of their lineage was Kapilavatthu, located in the northwest of the Ariyan world—the middle Ganges valley. [p. 14, Birth]
-  --- end answer text ---
+  --- end answer text ---</pre>
+</details>
 
-== step 5: finalize() -&gt; Answer ==
-  Answer.question: Where was the bodhisatta born?
+<details class="trace-step" open>
+  <summary>step 5: finalize() -&gt; Answer</summary>
+  <pre>  Answer.question: Where was the bodhisatta born?
   Answer.text: 285 chars
   Answer.passages: 4
-  sources: [c0030, pp. 16-17, Birth] [c0032, pp. 17-18, Birth] [c0023, p. 14, Birth] [c0031, p. 17, Birth]
+  sources: [c0030, pp. 16-17, Birth] [c0032, pp. 17-18, Birth] [c0023, p. 14, Birth] [c0031, p. 17, Birth]</pre>
+</details>
 
-== step 6: side effects ==
-  cache file now exists: True
-  last usage line: {&quot;backend&quot;: &quot;ollama&quot;, &quot;model&quot;: &quot;qwen2.5:3b&quot;, &quot;cached&quot;: false, &quot;think&quot;: false, &quot;prompt_tokens&quot;: 1520, &quot;completion_tokens&quot;: 75, &quot;total_duration_ms&quot;: 93235}
+<details class="trace-step" open>
+  <summary>step 6: side effects</summary>
+  <pre>  cache file now exists: True
+  last usage line: {&quot;backend&quot;: &quot;ollama&quot;, &quot;model&quot;: &quot;qwen2.5:3b&quot;, &quot;cached&quot;: false, &quot;think&quot;: false, &quot;prompt_tokens&quot;: 1520, &quot;completion_tokens&quot;: 75, &quot;total_duration_ms&quot;: 93235}</pre>
+</details>
 
-== step 7: second identical call ==
-  cached=True | same_text=True
-  This is why repeated experiments with the same prompt are free.
-</pre>
+<details class="trace-step" open>
+  <summary>step 7: second identical call</summary>
+  <pre>  cached=True | same_text=True
+  This is why repeated experiments with the same prompt are free.</pre>
+</details>
+
   <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/02_full_flow.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/02_full_flow.txt">output on GitHub</a></p>
 </section>
 

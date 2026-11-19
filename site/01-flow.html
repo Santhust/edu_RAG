@@ -14,28 +14,12 @@
   </header>
 
   <main>
-    <section class="worked-example">
-      <p class="eyebrow">Worked example</p>
-      <h2 class="section-title">One question, four passages</h2>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — one question, seven steps</h2>
       <p><strong>Question:</strong> “Where was the bodhisatta born?”</p>
-      <p>Retrieval scores all 1,404 chunks. These are the top four under hybrid ranking — the passages the generator will actually see:</p>
-      <div class="table-wrap">
-        <table class="score-table">
-          <thead>
-            <tr><th>#</th><th>Chunk</th><th>Fused</th><th>Lexical</th><th>Dense</th><th>Source</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>1</td><td>c0030</td><td>0.86</td><td>0.17</td><td>0.67</td><td>pp. 16-17, Birth</td></tr>
-            <tr><td>2</td><td>c0032</td><td>0.83</td><td>0.16</td><td>0.68</td><td>pp. 17-18, Birth</td></tr>
-            <tr><td>3</td><td>c0023</td><td>0.80</td><td>0.10</td><td>0.80</td><td>p. 14, Birth</td></tr>
-            <tr><td>4</td><td>c0031</td><td>0.70</td><td>0.11</td><td>0.69</td><td>p. 17, Birth</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>Those four excerpts go into the prompt. With only them as evidence, the model answers:</p>
-      <blockquote>The bodhisatta was born into the Sakya family of the noble-warrior caste. His father was named King Suddhodana and his mother was named Queen Maya. The capital city of their lineage was Kapilavatthu, located in the northwest of the Ariyan world—the middle Ganges valley. [p. 14, Birth]</blockquote>
-      <p class="module-meta">Everything below explains how those numbers were produced. The complete traces are in demo 01 and demo 02 further down this page.</p>
+      <p>This is the real trace from demo 01, not a retelling. Each step below is expandable; the long ones start collapsed. Open step 7 to see the exact excerpt block that becomes the prompt.</p>
     </section>
+    <!--demo:01_trace_question-->
 
     <h2 class="section-title">What already exists before you ask</h2>
     <p><code>ingest</code> runs once. It cleans the PDF into labelled pages (<code>pages.json</code>), slices those pages into 1,404 overlapping chunks (<code>chunks.jsonl</code>), and builds two indexes over the chunk texts: a sparse TF-IDF matrix (<code>lexical.joblib</code>) and, optionally, 384-dimensional semantic vectors (<code>dense-fastembed-BAAI_bge-small-en-v1.5.npy</code>). A question never touches the PDF; it reads these four files.</p>
@@ -50,12 +34,6 @@
       <li><strong>Ranking.</strong> An optional chapter filter narrows the candidate indices, then <code>np.argsort(-final)[:k]</code> selects the top four.</li>
       <li><strong>Context.</strong> <code>format_context()</code> turns those chunks into a numbered block of excerpts with their citation headers. That block becomes the user message. Nothing later can fetch more evidence.</li>
     </ol>
-
-    <section class="demo-intro">
-      <h2 class="section-title">Demo 01 — retrieval without an LLM</h2>
-      <p>This trace prints every stage above with real numbers, including the lexical-only ranking beside the hybrid ranking. It makes no chat request, so its output is deterministic.</p>
-    </section>
-    <!--demo:01_trace_question-->
 
     <section class="demo-intro">
       <h2 class="section-title">From context to answer</h2>

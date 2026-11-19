@@ -10,8 +10,12 @@ Run from the repo root:
 
 from __future__ import annotations
 
+import builtins
 import html
+import io
+import keyword
 import re
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +24,84 @@ DOCS_DIR = ROOT / "docs"
 DEMOS_DIR = ROOT / "demos"
 REPO_URL = "https://github.com/Santhust/edu_RAG"
 MARKER = re.compile(r"<!--\s*demo:([A-Za-z0-9_.-]+)\s*-->")
+STEP_HEADER = re.compile(r"^(== step \d+:.*==)$", re.MULTILINE)
+LONG_STEP = 800
+BUILTINS = set(dir(builtins))
+
+
+def highlight_python(source: str) -> str:
+    """Wrap Python tokens in spans carrying CSS classes.
+
+    Args:
+        source: raw text of a demo's .py file.
+
+    Returns:
+        Escaped HTML whose text content is identical to the source.
+    """
+    lines = source.splitlines(keepends=True)
+    parts: list[str] = []
+    previous = ""
+    row, col = 1, 0
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        start_row, start_col = token.start
+        while row < start_row:
+            parts.append(html.escape(lines[row - 1][col:]))
+            row += 1
+            col = 0
+        if start_col > col:
+            parts.append(html.escape(lines[row - 1][col:start_col]))
+            col = start_col
+        value = token.string
+        css = ""
+        if token.type == tokenize.COMMENT:
+            css = "tok-comment"
+        elif token.type == tokenize.STRING:
+            css = "tok-string"
+        elif token.type == tokenize.NUMBER:
+            css = "tok-number"
+        elif token.type == tokenize.NAME:
+            if keyword.iskeyword(value):
+                css = "tok-keyword"
+            elif previous in {"def", "class"}:
+                css = "tok-def"
+            elif value in BUILTINS:
+                css = "tok-builtin"
+        if css:
+            parts.append(f'<span class="{css}">{html.escape(value)}</span>')
+        else:
+            parts.append(html.escape(value))
+        row, col = token.end
+        if value.strip():
+            previous = value
+    return "".join(parts)
+
+
+def render_output(text: str) -> str:
+    """Split captured stdout into expandable per-step blocks.
+
+    Args:
+        text: raw captured stdout from a demo's paired .txt file.
+
+    Returns:
+        HTML details elements, one per printed step; long steps start closed.
+    """
+    parts = STEP_HEADER.split(text)
+    blocks: list[str] = []
+    if parts[0].strip():
+        blocks.append(f"<pre>{html.escape(parts[0].strip())}</pre>")
+    for index in range(1, len(parts) - 1, 2):
+        summary = html.escape(parts[index].strip().strip("=").strip())
+        body = parts[index + 1].strip("\n")
+        opened = "" if len(body) > LONG_STEP else " open"
+        blocks.append(
+            f'<details class="trace-step"{opened}>\n'
+            f"  <summary>{summary}</summary>\n"
+            f"  <pre>{html.escape(body)}</pre>\n"
+            "</details>\n"
+        )
+    if not blocks:
+        blocks.append(f"<pre>{html.escape(text)}</pre>")
+    return "\n".join(blocks)
 
 
 def expand_demo(match: re.Match[str]) -> str:
@@ -38,16 +120,18 @@ def expand_demo(match: re.Match[str]) -> str:
         raise FileNotFoundError(
             f"Demo {stem!r} needs both {source.name} and {output.name} in {DEMOS_DIR}"
         )
-    code = html.escape(source.read_text(encoding="utf-8"))
-    text = html.escape(output.read_text(encoding="utf-8"))
+    code = highlight_python(source.read_text(encoding="utf-8"))
+    text = output.read_text(encoding="utf-8")
     blob = f"{REPO_URL}/blob/main/demos/{stem}"
     return (
         '<section class="demo">\n'
         f"  <h2>{html.escape(stem)}</h2>\n"
-        "  <h3>Source</h3>\n"
-        f'  <pre><code class="language-python">{code}</code></pre>\n'
-        "  <h3>Captured output</h3>\n"
-        f"  <pre>{text}</pre>\n"
+        '  <details class="demo-source">\n'
+        f"    <summary>Source: {html.escape(source.name)} (expand)</summary>\n"
+        f'    <pre><code class="language-python">{code}</code></pre>\n'
+        "  </details>\n"
+        "  <h3>Captured output — expand a step</h3>\n"
+        f"  {render_output(text)}\n"
         '  <p class="demo-links">'
         f'<a href="{blob}.py">source on GitHub</a> · '
         f'<a href="{blob}.txt">output on GitHub</a>'
