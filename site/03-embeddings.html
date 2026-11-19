@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>03 — Inspect the embeddings · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 03</p>
+    <h1>Inspect the embeddings</h1>
+    <p class="lede">Module 02 treated the dense vector as a black box that returns a score. Here we open it: eight real vectors, their nearest neighbours, a three-dimensional projection and every full 384-number vector available to download.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — eight vectors you can check</h2>
+      <p>The trace picks four chapter-opening chunks and the four passages retrieved for the demo-01 question. It prints a sample of each vector, compares neighbours, runs PCA and writes both assets shown below. Each step is expandable.</p>
+    </section>
+    <!--demo:04_embeddings-->
+
+    <h2 class="section-title">The projection</h2>
+    <p>Each arrow starts at the origin and points toward where a chunk's embedding lands after PCA. Direction matters more than distance here: arrows that point the same way represent chunks the model treats as similar.</p>
+    <figure>
+      <img src="assets/embeddings-3d.svg" alt="Isometric plot of eight labelled arrows representing PCA projections of chunk embeddings">
+      <figcaption>Three principal components of a 384-dimensional space. Colours group the selected chunks by chapter.</figcaption>
+    </figure>
+    <p><a href="assets/embedding-vectors.json">Download the eight full 384-value vectors (JSON)</a> — the plot shows three derived numbers; this file contains all of them.</p>
+
+    <h2 class="section-title">What an embedding is</h2>
+    <p>A dense embedding is 384 learned numbers. Unlike a TF-IDF vector, no slot names a word and almost none of the slots are zero. Meaning lives in the pattern of small positive and negative values across all dimensions, which is why the first twelve coordinates in the trace are only a sample and not individually readable. The model was trained so that passages with related meanings end up pointing in similar directions.</p>
+    <p>That is why c0023 scores only 0.10 on lexical similarity for the birthplace question but 0.80 on dense similarity. Its words are the Sakya family and Kapilavatthu, not the question's wording, yet the embedding places it near the question in meaning.</p>
+
+    <h2 class="section-title">What PCA keeps and discards</h2>
+    <p>PCA finds the directions of largest spread in the eight vectors. The first three components explain 0.27, 0.19 and 0.15 of the variance — about 61 percent combined. The remaining 39 percent lives in dimensions this plot cannot show. So the figure is a sketch of the geometry, not a map of the book, and a short apparent distance between two arrow tips does not prove the full vectors are close.</p>
+
+    <h2 class="section-title">How this differs from the lexical index</h2>
+    <p>TF-IDF dimensions are counted words: interpretable, sparse, and blind to different wording for the same idea. Embedding dimensions are learned features: dense, harder to read one at a time, but able to connect a passage about Kapilavatthu to a question about where the bodhisatta was born. The hybrid score in module 02 exists because neither view is complete on its own.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Questions that came up while learning this</h2>
+      <p>These are the questions asked while going through the trace. Open one to read the explanation.</p>
+
+      <details class="trace-step">
+        <summary>What is the vocabulary of the dense embedding? Some examples, words or tokens?</summary>
+        <p>There are two different vocabularies here. The tokenizer's input vocabulary is fixed by the model, not learned from this book: 30,522 WordPiece tokens, lowercase, plus special tokens like <code>[CLS]</code> and <code>[SEP]</code>. Checking the cached tokenizer gives these real splits:</p>
+        <p><code>born</code> stays <code>born</code>; <code>mother</code> stays <code>mother</code>; <code>bodhisatta</code> becomes <code>bo ##dhi ##sat ##ta</code>; <code>Kapilavatthu</code> becomes <code>ka ##pi ##lav ##att ##hu</code>. <code>##</code> means a continuation of the previous word. The full demo question is <code>[CLS] where was the bo ##dhi ##sat ##ta born ? [SEP]</code>.</p>
+        <p>The output side has no word vocabulary at all. Its 384 slots are learned features with no labels, so no slot means <code>born</code>; a word's meaning is spread across many dimensions. The TF-IDF vocabulary has 27,246 book-derived terms with readable names. The two sizes are coincidentally similar and unrelated. The dense model also reads at most 512 tokens at a time, so a long chunk can be truncated on input.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Is there a corresponding dimension for the TF-IDF model? Isn't it the same as its vocabulary size?</summary>
+        <p>Yes. The TF-IDF vector length equals the number of learned terms: <code>lexical.matrix</code> has shape <code>(1404, 27246)</code>, one row per chunk and one column per term. <code>get_feature_names_out()</code> gives the names in column order and <code>vocabulary_</code> maps a term to its column, which is how step 9 prints a word beside a non-zero weight.</p>
+        <p>The query is transformed into the same 27,246-column space, so matching columns mean the same thing. Change <code>max_features</code> or <code>ngram_range</code> and the dimension changes, requiring a re-ingest; the dense model's 384 dimensions are fixed by its architecture.</p>
+        <p>TF-IDF has no learned embedding table. You can picture it as an identity matrix of size 27,246 × 27,246: term <em>j</em> maps to a 1 in column <em>j</em> and zeros elsewhere. That is why each coordinate is readable and why the matrix is stored sparsely. People call this the feature space rather than the embedding dimension, but it is the dimensionality of each chunk's vector.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>

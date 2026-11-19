@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>03 — Inspect the embeddings · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 03</p>
+    <h1>Inspect the embeddings</h1>
+    <p class="lede">Module 02 treated the dense vector as a black box that returns a score. Here we open it: eight real vectors, their nearest neighbours, a three-dimensional projection and every full 384-number vector available to download.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — eight vectors you can check</h2>
+      <p>The trace picks four chapter-opening chunks and the four passages retrieved for the demo-01 question. It prints a sample of each vector, compares neighbours, runs PCA and writes both assets shown below. Each step is expandable.</p>
+    </section>
+    <section class="demo">
+  <h2>04_embeddings</h2>
+  <details class="demo-source">
+    <summary>Source: 04_embeddings.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;Inspect dense embeddings instead of only their scores.
+
+Step 1: load the chunks and the 1404 x 384 dense matrix.
+Step 2: choose labelled chunks from several chapters plus the demo-01 hits.
+Step 3: print a vector sample and write full vectors to a JSON asset.
+Step 4: compute cosine neighbours inside the selected set.
+Step 5: project to 3D with PCA and write an isometric SVG of arrows.
+Step 6: state what the plot shows and what it does not mean.
+
+Run from the repo root:
+    .venv/bin/python demos/04_embeddings.py
+
+Writes docs/assets/embedding-vectors.json and docs/assets/embeddings-3d.svg.
+No chat model is called. All numbers print at 2 decimals.
+&quot;&quot;&quot;</span>
+
+<span class="tok-keyword">import</span> html
+<span class="tok-keyword">import</span> json
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
+
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
+
+<span class="tok-keyword">import</span> numpy <span class="tok-keyword">as</span> np
+<span class="tok-keyword">from</span> sklearn.decomposition <span class="tok-keyword">import</span> PCA
+
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+<span class="tok-keyword">from</span> rag.index <span class="tok-keyword">import</span> DenseIndex
+<span class="tok-keyword">from</span> rag.retrieve <span class="tok-keyword">import</span> Retriever
+<span class="tok-keyword">from</span> rag.chunk <span class="tok-keyword">import</span> load_chunks
+
+QUESTION = <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
+ASSETS = Path(__file__).resolve().parent.parent / <span class="tok-string">&quot;docs&quot;</span> / <span class="tok-string">&quot;assets&quot;</span>
+PALETTE = [<span class="tok-string">&quot;#2f6b4f&quot;</span>, <span class="tok-string">&quot;#8b3a62&quot;</span>, <span class="tok-string">&quot;#a27200&quot;</span>, <span class="tok-string">&quot;#285f8a&quot;</span>, <span class="tok-string">&quot;#6b3fa0&quot;</span>]
+
+
+<span class="tok-keyword">def</span> <span class="tok-def">arrow_svg</span>(points: np.ndarray, labels: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], colors: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]) -&gt; <span class="tok-builtin">str</span>:
+    <span class="tok-string">&quot;&quot;&quot;Draw labelled 3D arrows using an isometric projection.
+
+    Args:
+        points: selected rows of the PCA result, shape (n, 3).
+        labels: one short label per row.
+        colors: one hex colour per row.
+
+    Returns:
+        A complete SVG document as a string.
+    &quot;&quot;&quot;</span>
+    scales = np.maximum(np.<span class="tok-builtin">max</span>(np.<span class="tok-builtin">abs</span>(points), axis=<span class="tok-number">0</span>), <span class="tok-number">1e-9</span>)
+    scaled = points / scales
+    cx, cy, factor = <span class="tok-number">470</span>, <span class="tok-number">350</span>, <span class="tok-number">180</span>
+
+    <span class="tok-keyword">def</span> <span class="tok-def">project</span>(x: <span class="tok-builtin">float</span>, y: <span class="tok-builtin">float</span>, z: <span class="tok-builtin">float</span>) -&gt; <span class="tok-builtin">tuple</span>[<span class="tok-builtin">float</span>, <span class="tok-builtin">float</span>]:
+        px = cx + factor * (x - z) * <span class="tok-number">0.866</span>
+        py = cy - factor * (y * <span class="tok-number">0.8</span> + (x + z) * <span class="tok-number">0.45</span>)
+        <span class="tok-keyword">return</span> px, py
+
+    lines = [
+        <span class="tok-string">&#x27;&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 900 700&quot; width=&quot;900&quot; height=&quot;700&quot;&gt;&#x27;</span>,
+        <span class="tok-string">&#x27;&lt;rect width=&quot;900&quot; height=&quot;700&quot; fill=&quot;#f7f5f0&quot;/&gt;&#x27;</span>,
+        <span class="tok-string">&#x27;&lt;text x=&quot;32&quot; y=&quot;42&quot; font-family=&quot;Georgia,serif&quot; font-size=&quot;22&quot; fill=&quot;#1f2621&quot;&gt;Embeddings in three dimensions&lt;/text&gt;&#x27;</span>,
+        <span class="tok-string">&#x27;&lt;text x=&quot;32&quot; y=&quot;66&quot; font-family=&quot;monospace&quot; font-size=&quot;13&quot; fill=&quot;#5b665d&quot;&gt;3D PCA projection of 384-dimensional vectors; arrows are directions, not book positions&lt;/text&gt;&#x27;</span>,
+    ]
+    <span class="tok-keyword">for</span> number, colour <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(<span class="tok-builtin">dict</span>.fromkeys(colors)):
+        lines.append(
+            f&#x27;&lt;defs&gt;&lt;marker id=&quot;arrow{number}&quot; viewBox=&quot;0 0 10 10&quot; refX=&quot;9&quot; refY=&quot;5&quot; &#x27;
+            f&#x27;markerWidth=&quot;7&quot; markerHeight=&quot;7&quot; orient=&quot;auto-start-reverse&quot;&gt;&#x27;
+            f&#x27;&lt;path d=&quot;M 0 0 L 10 5 L 0 10 z&quot; fill=&quot;{colour}&quot;/&gt;&lt;/marker&gt;&lt;/defs&gt;&#x27;
+        )
+    marker_id = {colour: number <span class="tok-keyword">for</span> number, colour <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(<span class="tok-builtin">dict</span>.fromkeys(colors))}
+
+    <span class="tok-keyword">for</span> axis, name <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>((<span class="tok-string">&quot;PC1&quot;</span>, <span class="tok-string">&quot;PC2&quot;</span>, <span class="tok-string">&quot;PC3&quot;</span>)):
+        unit = np.zeros(<span class="tok-number">3</span>)
+        unit[axis] = <span class="tok-number">1.0</span>
+        x, y = project(*unit)
+        lines.append(
+            f&#x27;&lt;line x1=&quot;{cx}&quot; y1=&quot;{cy}&quot; x2=&quot;{x:.1f}&quot; y2=&quot;{y:.1f}&quot; &#x27;
+            <span class="tok-string">&#x27;stroke=&quot;#c9c5ba&quot; stroke-dasharray=&quot;5 5&quot;/&gt;&#x27;</span>
+        )
+        lines.append(
+            f&#x27;&lt;text x=&quot;{x + <span class="tok-number">8</span>:.1f}&quot; y=&quot;{y - <span class="tok-number">6</span>:.1f}&quot; font-family=&quot;monospace&quot; &#x27;
+            f&#x27;font-size=&quot;13&quot; fill=&quot;#7a837a&quot;&gt;{name}&lt;/text&gt;&#x27;
+        )
+
+    <span class="tok-keyword">for</span> index, (point, label, colour) <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(<span class="tok-builtin">zip</span>(scaled, labels, colors)):
+        x, y = project(*point)
+        lines.append(
+            f&#x27;&lt;line x1=&quot;{cx}&quot; y1=&quot;{cy}&quot; x2=&quot;{x:.1f}&quot; y2=&quot;{y:.1f}&quot; &#x27;
+            f&#x27;stroke=&quot;{colour}&quot; stroke-width=&quot;2.5&quot; &#x27;
+            f&#x27;marker-end=&quot;url(#arrow{marker_id[colour]})&quot;/&gt;&#x27;
+        )
+        anchor = <span class="tok-string">&quot;end&quot;</span> <span class="tok-keyword">if</span> x &gt; <span class="tok-number">740</span> <span class="tok-keyword">else</span> <span class="tok-string">&quot;start&quot;</span>
+        dx = -<span class="tok-number">9</span> <span class="tok-keyword">if</span> x &gt; <span class="tok-number">740</span> <span class="tok-keyword">else</span> <span class="tok-number">9</span>
+        lines.append(
+            f&#x27;&lt;text x=&quot;{x + dx:.1f}&quot; y=&quot;{y - <span class="tok-number">8</span>:.1f}&quot; text-anchor=&quot;{anchor}&quot; &#x27;
+            f&#x27;font-family=&quot;monospace&quot; font-size=&quot;13&quot; fill=&quot;{colour}&quot;&gt;&#x27;
+            f&quot;{html.escape(label)}&lt;/text&gt;&quot;
+        )
+
+    lines.append(f&#x27;&lt;circle cx=&quot;{cx}&quot; cy=&quot;{cy}&quot; r=&quot;4&quot; fill=&quot;#1f2621&quot;/&gt;&#x27;)
+    lines.append(
+        <span class="tok-string">&#x27;&lt;text x=&quot;32&quot; y=&quot;680&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; fill=&quot;#5b665d&quot;&gt;&#x27;</span>
+        <span class="tok-string">&#x27;PCA preserves large variance directions only; distance in this plot is a sketch, not the full 384D geometry.&lt;/text&gt;&#x27;</span>
+    )
+    lines.append(<span class="tok-string">&quot;&lt;/svg&gt;&quot;</span>)
+    <span class="tok-keyword">return</span> <span class="tok-string">&quot;\n&quot;</span>.join(lines)
+
+
+settings = Settings.load()
+dense_files = <span class="tok-builtin">sorted</span>(settings.index_dir.glob(<span class="tok-string">&quot;dense-*.npy&quot;</span>))
+<span class="tok-keyword">if</span> <span class="tok-keyword">not</span> dense_files:
+    <span class="tok-keyword">raise</span> <span class="tok-builtin">RuntimeError</span>(<span class="tok-string">&quot;No dense index found; run ingest --embed-backend fastembed&quot;</span>)
+backend = dense_files[<span class="tok-number">0</span>].stem.removeprefix(<span class="tok-string">&quot;dense-&quot;</span>).split(<span class="tok-string">&quot;-&quot;</span>)[<span class="tok-number">0</span>]
+settings = settings.overrides(embed_backend=backend)
+
+chunks = load_chunks(settings)
+dense = DenseIndex(settings).load()
+matrix = dense.matrix
+retriever = Retriever(settings, chunks=chunks)
+hits = retriever.search(QUESTION, k=<span class="tok-number">4</span>, mode=<span class="tok-string">&quot;hybrid&quot;</span>)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: load the index ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  chunks: {<span class="tok-builtin">len</span>(chunks)} | dense matrix: {matrix.shape} | dtype: {matrix.dtype}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  each row is one chunk vector; every row has length {np.linalg.norm(matrix[<span class="tok-number">0</span>]):.2f}&quot;)
+
+chosen: <span class="tok-builtin">list</span>[<span class="tok-builtin">int</span>] = []
+<span class="tok-keyword">for</span> chapter <span class="tok-keyword">in</span> (<span class="tok-string">&quot;The Noble Search&quot;</span>, <span class="tok-string">&quot;The Awakening&quot;</span>, <span class="tok-string">&quot;Dwelling near Sāvatthī&quot;</span>, <span class="tok-string">&quot;The Last Year&quot;</span>):
+    candidates = [
+        i <span class="tok-keyword">for</span> i, chunk <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(chunks)
+        <span class="tok-keyword">if</span> chunk.chapter == chapter <span class="tok-keyword">and</span> <span class="tok-builtin">len</span>(chunk.text) &gt; <span class="tok-number">600</span>
+    ]
+    <span class="tok-keyword">if</span> candidates:
+        chosen.append(candidates[<span class="tok-number">0</span>])
+<span class="tok-keyword">for</span> item <span class="tok-keyword">in</span> hits:
+    index = <span class="tok-builtin">next</span>(i <span class="tok-keyword">for</span> i, chunk <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(chunks) <span class="tok-keyword">if</span> chunk.<span class="tok-builtin">id</span> == item.chunk.<span class="tok-builtin">id</span>)
+    <span class="tok-keyword">if</span> index <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> chosen:
+        chosen.append(index)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: selected chunks ==&quot;</span>)
+<span class="tok-keyword">for</span> index <span class="tok-keyword">in</span> chosen:
+    chunk = chunks[index]
+    <span class="tok-builtin">print</span>(f&quot;  {chunk.<span class="tok-builtin">id</span>} [{chunk.citation}] section={chunk.section}&quot;)
+    <span class="tok-builtin">print</span>(f&quot;    {<span class="tok-string">&#x27; &#x27;</span>.join(chunk.text.split())[:<span class="tok-number">110</span>]}...&quot;)
+
+ASSETS.mkdir(parents=<span class="tok-keyword">True</span>, exist_ok=<span class="tok-keyword">True</span>)
+vectors = []
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 3: vector sample and full vectors ==&quot;</span>)
+<span class="tok-keyword">for</span> index <span class="tok-keyword">in</span> chosen:
+    chunk = chunks[index]
+    row = matrix[index]
+    vectors.append({
+        <span class="tok-string">&quot;id&quot;</span>: chunk.<span class="tok-builtin">id</span>,
+        <span class="tok-string">&quot;chapter&quot;</span>: chunk.chapter,
+        <span class="tok-string">&quot;section&quot;</span>: chunk.section,
+        <span class="tok-string">&quot;citation&quot;</span>: chunk.citation,
+        <span class="tok-string">&quot;vector&quot;</span>: [<span class="tok-builtin">round</span>(<span class="tok-builtin">float</span>(value), <span class="tok-number">6</span>) <span class="tok-keyword">for</span> value <span class="tok-keyword">in</span> row],
+    })
+    head = <span class="tok-string">&quot;, &quot;</span>.join(f&quot;{value:.2f}&quot; <span class="tok-keyword">for</span> value <span class="tok-keyword">in</span> row[:<span class="tok-number">12</span>])
+    <span class="tok-builtin">print</span>(f&quot;  {chunk.<span class="tok-builtin">id</span>} first 12 of {<span class="tok-builtin">len</span>(row)}: {head}&quot;)
+json_path = ASSETS / <span class="tok-string">&quot;embedding-vectors.json&quot;</span>
+json_path.write_text(
+    json.dumps(vectors, ensure_ascii=<span class="tok-keyword">False</span>, indent=<span class="tok-number">1</span>), encoding=<span class="tok-string">&quot;utf-8&quot;</span>
+)
+<span class="tok-builtin">print</span>(f&quot;  full 384-value vectors written to {json_path.relative_to(ASSETS.parent.parent)}&quot;)
+
+selected = matrix[chosen]
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: cosine neighbours inside the selected set ==&quot;</span>)
+similarity = selected @ selected.T
+<span class="tok-keyword">for</span> position, index <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(chosen):
+    others = [i <span class="tok-keyword">for</span> i <span class="tok-keyword">in</span> <span class="tok-builtin">range</span>(<span class="tok-builtin">len</span>(chosen)) <span class="tok-keyword">if</span> i != position]
+    top = <span class="tok-builtin">sorted</span>(others, key=<span class="tok-keyword">lambda</span> i: -similarity[position, i])[:<span class="tok-number">3</span>]
+    names = <span class="tok-string">&quot;, &quot;</span>.join(
+        f&quot;{chunks[chosen[i]].<span class="tok-builtin">id</span>}={similarity[position, i]:.2f}&quot; <span class="tok-keyword">for</span> i <span class="tok-keyword">in</span> top
+    )
+    <span class="tok-builtin">print</span>(f&quot;  {chunks[index].<span class="tok-builtin">id</span>}: {names}&quot;)
+
+pca = PCA(n_components=<span class="tok-number">3</span>)
+projected = pca.fit_transform(selected)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: PCA projection ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  explained variance: &quot;</span> + <span class="tok-string">&quot;, &quot;</span>.join(f&quot;{v:.2f}&quot; <span class="tok-keyword">for</span> v <span class="tok-keyword">in</span> pca.explained_variance_ratio_))
+labels = [f&quot;{chunks[index].<span class="tok-builtin">id</span>} {chunks[index].chapter[:<span class="tok-number">18</span>]}&quot; <span class="tok-keyword">for</span> index <span class="tok-keyword">in</span> chosen]
+chapter_colours = {
+    chapter: PALETTE[i % <span class="tok-builtin">len</span>(PALETTE)]
+    <span class="tok-keyword">for</span> i, chapter <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(<span class="tok-builtin">dict</span>.fromkeys(chunks[index].chapter <span class="tok-keyword">for</span> index <span class="tok-keyword">in</span> chosen))
+}
+colors = [chapter_colours[chunks[index].chapter] <span class="tok-keyword">for</span> index <span class="tok-keyword">in</span> chosen]
+svg_path = ASSETS / <span class="tok-string">&quot;embeddings-3d.svg&quot;</span>
+svg_path.write_text(arrow_svg(projected, labels, colors), encoding=<span class="tok-string">&quot;utf-8&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  wrote {svg_path.relative_to(ASSETS.parent.parent)}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  {<span class="tok-builtin">len</span>(chosen)} arrows: one per selected chunk, from the origin&quot;)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 6: how to read the plot ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Arrows point in the direction of each chunk&#x27;s embedding after PCA.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Similar directions mean similar meaning in the model&#x27;s space.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  PCA keeps the three largest variance directions of 384, so it discards detail.&quot;</span>)
+</code></pre>
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: load the index</summary>
+  <pre>  chunks: 1404 | dense matrix: (1404, 384) | dtype: float32
+  each row is one chunk vector; every row has length 1.00</pre>
+</details>
+
+<details class="trace-step">
+  <summary>step 2: selected chunks</summary>
+  <pre>  c0039 [p. 23, The Noble Search] section=The Noble Search
+    CHAPTER ONE The Noble Search The famous account of the bodhisatta’s original impulse in this lifetime to searc...
+  c0162 [p. 77, The Awakening] section=The Awakening
+    CHAPTER TWO The Awakening Even though the Buddha’s awakening was the most important accomplishment in his life...
+  c0674 [p. 312, Dwelling near Sāvatthī] section=Dwelling near Sāvatthī
+    CHAPTER NINE Dwelling near Sāvatthī During the Buddha’s lifetime, Sāvatthī, the capital of Kosala, was one of ...
+  c1113 [p. 515, The Last Year] section=The Last Year
+    CHAPTER FIFTEEN The Last Year We now return to a clear chronology because an entire sutta is devoted to the ev...
+  c0030 [pp. 16-17, Birth] section=Birth
+    strung a blue, yellow, red, white, or beige thread. And then a man of good eyesight, taking it in his hand, wo...
+  c0032 [pp. 17-18, Birth] section=Birth
+    mucus, unsullied by blood, unsullied by lymph: pure, very pure.’… “…‘When the bodhisatta left his mother’s wom...
+  c0023 [p. 14, Birth] section=Birth
+    PROLOGUE Birth The bodhisatta, or Buddha-to-be, was born into the Sakya family of the noble-warrior caste. The...
+  c0031 [p. 17, Birth] section=Birth
+    “…‘Whereas other women give birth while sitting or lying down, that’s not how the bodhisatta’s mother gave bir...</pre>
+</details>
+
+<details class="trace-step">
+  <summary>step 3: vector sample and full vectors</summary>
+  <pre>  c0039 first 12 of 384: -0.06, 0.07, -0.04, 0.02, -0.06, 0.05, 0.09, -0.03, 0.01, -0.01, 0.03, -0.01
+  c0162 first 12 of 384: 0.01, 0.02, -0.03, 0.00, 0.01, 0.02, 0.07, -0.05, 0.04, 0.03, -0.06, -0.06
+  c0674 first 12 of 384: 0.00, 0.05, -0.02, -0.03, -0.05, 0.01, 0.09, 0.01, -0.02, 0.00, 0.03, -0.04
+  c1113 first 12 of 384: -0.08, 0.04, -0.02, -0.00, -0.04, -0.00, 0.05, 0.01, 0.06, -0.02, -0.02, -0.03
+  c0030 first 12 of 384: -0.05, -0.01, -0.07, 0.03, -0.06, 0.04, 0.07, -0.01, 0.00, -0.03, 0.03, -0.00
+  c0032 first 12 of 384: -0.03, 0.01, -0.05, 0.02, -0.03, -0.02, 0.07, -0.03, 0.00, -0.01, 0.00, -0.03
+  c0023 first 12 of 384: 0.04, 0.04, -0.07, -0.02, -0.04, 0.03, 0.08, -0.05, -0.04, 0.02, 0.02, -0.05
+  c0031 first 12 of 384: -0.01, 0.04, -0.06, 0.00, -0.07, -0.00, 0.06, -0.02, 0.03, -0.05, -0.03, -0.05
+  full 384-value vectors written to docs/assets/embedding-vectors.json</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 4: cosine neighbours inside the selected set</summary>
+  <pre>  c0039: c1113=0.74, c0031=0.74, c0023=0.74
+  c0162: c0039=0.73, c1113=0.72, c0031=0.70
+  c0674: c0023=0.74, c0162=0.69, c0039=0.68
+  c1113: c0039=0.74, c0162=0.72, c0032=0.70
+  c0030: c0031=0.89, c0032=0.79, c0023=0.74
+  c0032: c0031=0.86, c0030=0.79, c0039=0.73
+  c0023: c0031=0.79, c0674=0.74, c0030=0.74
+  c0031: c0030=0.89, c0032=0.86, c0023=0.79</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 5: PCA projection</summary>
+  <pre>  explained variance: 0.27, 0.19, 0.15
+  wrote docs/assets/embeddings-3d.svg
+  8 arrows: one per selected chunk, from the origin</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 6: how to read the plot</summary>
+  <pre>  Arrows point in the direction of each chunk&#x27;s embedding after PCA.
+  Similar directions mean similar meaning in the model&#x27;s space.
+  PCA keeps the three largest variance directions of 384, so it discards detail.</pre>
+</details>
+
+  <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/04_embeddings.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/04_embeddings.txt">output on GitHub</a></p>
+</section>
+
+
+    <h2 class="section-title">The projection</h2>
+    <p>Each arrow starts at the origin and points toward where a chunk's embedding lands after PCA. Direction matters more than distance here: arrows that point the same way represent chunks the model treats as similar.</p>
+    <figure>
+      <img src="assets/embeddings-3d.svg" alt="Isometric plot of eight labelled arrows representing PCA projections of chunk embeddings">
+      <figcaption>Three principal components of a 384-dimensional space. Colours group the selected chunks by chapter.</figcaption>
+    </figure>
+    <p><a href="assets/embedding-vectors.json">Download the eight full 384-value vectors (JSON)</a> — the plot shows three derived numbers; this file contains all of them.</p>
+
+    <h2 class="section-title">What an embedding is</h2>
+    <p>A dense embedding is 384 learned numbers. Unlike a TF-IDF vector, no slot names a word and almost none of the slots are zero. Meaning lives in the pattern of small positive and negative values across all dimensions, which is why the first twelve coordinates in the trace are only a sample and not individually readable. The model was trained so that passages with related meanings end up pointing in similar directions.</p>
+    <p>That is why c0023 scores only 0.10 on lexical similarity for the birthplace question but 0.80 on dense similarity. Its words are the Sakya family and Kapilavatthu, not the question's wording, yet the embedding places it near the question in meaning.</p>
+
+    <h2 class="section-title">What PCA keeps and discards</h2>
+    <p>PCA finds the directions of largest spread in the eight vectors. The first three components explain 0.27, 0.19 and 0.15 of the variance — about 61 percent combined. The remaining 39 percent lives in dimensions this plot cannot show. So the figure is a sketch of the geometry, not a map of the book, and a short apparent distance between two arrow tips does not prove the full vectors are close.</p>
+
+    <h2 class="section-title">How this differs from the lexical index</h2>
+    <p>TF-IDF dimensions are counted words: interpretable, sparse, and blind to different wording for the same idea. Embedding dimensions are learned features: dense, harder to read one at a time, but able to connect a passage about Kapilavatthu to a question about where the bodhisatta was born. The hybrid score in module 02 exists because neither view is complete on its own.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Questions that came up while learning this</h2>
+      <p>These are the questions asked while going through the trace. Open one to read the explanation.</p>
+
+      <details class="trace-step">
+        <summary>What is the vocabulary of the dense embedding? Some examples, words or tokens?</summary>
+        <p>There are two different vocabularies here. The tokenizer's input vocabulary is fixed by the model, not learned from this book: 30,522 WordPiece tokens, lowercase, plus special tokens like <code>[CLS]</code> and <code>[SEP]</code>. Checking the cached tokenizer gives these real splits:</p>
+        <p><code>born</code> stays <code>born</code>; <code>mother</code> stays <code>mother</code>; <code>bodhisatta</code> becomes <code>bo ##dhi ##sat ##ta</code>; <code>Kapilavatthu</code> becomes <code>ka ##pi ##lav ##att ##hu</code>. <code>##</code> means a continuation of the previous word. The full demo question is <code>[CLS] where was the bo ##dhi ##sat ##ta born ? [SEP]</code>.</p>
+        <p>The output side has no word vocabulary at all. Its 384 slots are learned features with no labels, so no slot means <code>born</code>; a word's meaning is spread across many dimensions. The TF-IDF vocabulary has 27,246 book-derived terms with readable names. The two sizes are coincidentally similar and unrelated. The dense model also reads at most 512 tokens at a time, so a long chunk can be truncated on input.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Is there a corresponding dimension for the TF-IDF model? Isn't it the same as its vocabulary size?</summary>
+        <p>Yes. The TF-IDF vector length equals the number of learned terms: <code>lexical.matrix</code> has shape <code>(1404, 27246)</code>, one row per chunk and one column per term. <code>get_feature_names_out()</code> gives the names in column order and <code>vocabulary_</code> maps a term to its column, which is how step 9 prints a word beside a non-zero weight.</p>
+        <p>The query is transformed into the same 27,246-column space, so matching columns mean the same thing. Change <code>max_features</code> or <code>ngram_range</code> and the dimension changes, requiring a re-ingest; the dense model's 384 dimensions are fixed by its architecture.</p>
+        <p>TF-IDF has no learned embedding table. You can picture it as an identity matrix of size 27,246 × 27,246: term <em>j</em> maps to a 1 in column <em>j</em> and zeros elsewhere. That is why each coordinate is readable and why the matrix is stored sparsely. People call this the feature space rather than the embedding dimension, but it is the dimensionality of each chunk's vector.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>
