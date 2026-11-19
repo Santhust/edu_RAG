@@ -70,12 +70,12 @@ export RAG_LLM_MODEL=gemini-2.5-flash
 
 # back to local, for comparison
 export RAG_LLM_BACKEND=ollama
-export RAG_LLM_MODEL=qwen2.5:3b
+export RAG_LLM_MODEL=lfm3:latest
 ```
 
 Any OpenAI-compatible service works with `RAG_LLM_BACKEND=custom` plus
 `RAG_BASE_URL` and `RAG_LLM_MODEL`. CLI flags override the environment for a
-single command, e.g. `--backend ollama --model qwen2.5:3b`.
+single command, e.g. `--backend ollama --model lfm3:latest`.
 
 ## Ollama thinking models (e.g. `lfm3`)
 

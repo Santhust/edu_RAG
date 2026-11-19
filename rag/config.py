@@ -29,7 +29,7 @@ PROVIDER_PRESETS: dict[str, dict[str, str | None]] = {
     "ollama": {
         "api_style": "ollama",
         "base_url": "http://localhost:11434",
-        "model": "qwen2.5:3b",
+        "model": "lfm3:latest",
     },
     "openrouter": {
         "api_style": "openai",
@@ -74,7 +74,7 @@ class Settings:
     overlap: int = 200
     top_k: int = 4
     llm_backend: str = "ollama"
-    llm_model: str = "qwen2.5:3b"
+    llm_model: str = "lfm3:latest"
     base_url: str | None = None
     api_key: str | None = None
     embed_backend: str = "tfidf"  # tfidf | fastembed | openai
