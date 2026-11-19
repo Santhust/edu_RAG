@@ -6,6 +6,26 @@ The point is to see every gear, so the core uses only Python plus
 scikit-learn / numpy / rich, with Ollama or any OpenAI-compatible cloud API
 for generation.
 
+## Learning site
+
+The guided walkthroughs are published with GitHub Pages at
+https://santhust.github.io/edu_RAG/ . There are three modules: following one
+question through the app, seeing the score math, and inspecting the dense
+embeddings.
+
+The site is generated from `site/` by `tools/build_site.py` into `docs/`,
+which is the directory Pages serves from the `main` branch. Edit the source
+pages in `site/`, regenerate, and commit both directories. Demo trace files
+and the plot vectors live in `demos/` and `docs/assets/` respectively.
+
+Preview locally before pushing:
+
+```bash
+.venv/bin/python tools/build_site.py
+python -m http.server 8000 -d docs
+# open http://localhost:8000/
+```
+
 ## Getting the book
 
 The source PDF is not included in this repository. Download it yourself from
@@ -23,7 +43,8 @@ cleaning and chapter heuristics in `rag/clean.py` are tuned for this book.
 ## Quick start
 
 ```bash
-cd /home/sanrpi5/Desktop/learning/edu_RAG
+# from a clone of this repository
+cd edu_RAG
 
 # 1. extract, clean, chunk, index (no network, no API key)
 python -m rag.cli ingest --pdf books/noble-warrior.pdf
