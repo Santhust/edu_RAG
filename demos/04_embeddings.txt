@@ -1,0 +1,52 @@
+== step 1: load the index ==
+  chunks: 1404 | dense matrix: (1404, 384) | dtype: float32
+  each row is one chunk vector; every row has length 1.00
+
+== step 2: selected chunks ==
+  c0039 [p. 23, The Noble Search] section=The Noble Search
+    CHAPTER ONE The Noble Search The famous account of the bodhisatta’s original impulse in this lifetime to searc...
+  c0162 [p. 77, The Awakening] section=The Awakening
+    CHAPTER TWO The Awakening Even though the Buddha’s awakening was the most important accomplishment in his life...
+  c0674 [p. 312, Dwelling near Sāvatthī] section=Dwelling near Sāvatthī
+    CHAPTER NINE Dwelling near Sāvatthī During the Buddha’s lifetime, Sāvatthī, the capital of Kosala, was one of ...
+  c1113 [p. 515, The Last Year] section=The Last Year
+    CHAPTER FIFTEEN The Last Year We now return to a clear chronology because an entire sutta is devoted to the ev...
+  c0030 [pp. 16-17, Birth] section=Birth
+    strung a blue, yellow, red, white, or beige thread. And then a man of good eyesight, taking it in his hand, wo...
+  c0032 [pp. 17-18, Birth] section=Birth
+    mucus, unsullied by blood, unsullied by lymph: pure, very pure.’… “…‘When the bodhisatta left his mother’s wom...
+  c0023 [p. 14, Birth] section=Birth
+    PROLOGUE Birth The bodhisatta, or Buddha-to-be, was born into the Sakya family of the noble-warrior caste. The...
+  c0031 [p. 17, Birth] section=Birth
+    “…‘Whereas other women give birth while sitting or lying down, that’s not how the bodhisatta’s mother gave bir...
+
+== step 3: vector sample and full vectors ==
+  c0039 first 12 of 384: -0.06, 0.07, -0.04, 0.02, -0.06, 0.05, 0.09, -0.03, 0.01, -0.01, 0.03, -0.01
+  c0162 first 12 of 384: 0.01, 0.02, -0.03, 0.00, 0.01, 0.02, 0.07, -0.05, 0.04, 0.03, -0.06, -0.06
+  c0674 first 12 of 384: 0.00, 0.05, -0.02, -0.03, -0.05, 0.01, 0.09, 0.01, -0.02, 0.00, 0.03, -0.04
+  c1113 first 12 of 384: -0.08, 0.04, -0.02, -0.00, -0.04, -0.00, 0.05, 0.01, 0.06, -0.02, -0.02, -0.03
+  c0030 first 12 of 384: -0.05, -0.01, -0.07, 0.03, -0.06, 0.04, 0.07, -0.01, 0.00, -0.03, 0.03, -0.00
+  c0032 first 12 of 384: -0.03, 0.01, -0.05, 0.02, -0.03, -0.02, 0.07, -0.03, 0.00, -0.01, 0.00, -0.03
+  c0023 first 12 of 384: 0.04, 0.04, -0.07, -0.02, -0.04, 0.03, 0.08, -0.05, -0.04, 0.02, 0.02, -0.05
+  c0031 first 12 of 384: -0.01, 0.04, -0.06, 0.00, -0.07, -0.00, 0.06, -0.02, 0.03, -0.05, -0.03, -0.05
+  full 384-value vectors written to docs/assets/embedding-vectors.json
+
+== step 4: cosine neighbours inside the selected set ==
+  c0039: c1113=0.74, c0031=0.74, c0023=0.74
+  c0162: c0039=0.73, c1113=0.72, c0031=0.70
+  c0674: c0023=0.74, c0162=0.69, c0039=0.68
+  c1113: c0039=0.74, c0162=0.72, c0032=0.70
+  c0030: c0031=0.89, c0032=0.79, c0023=0.74
+  c0032: c0031=0.86, c0030=0.79, c0039=0.73
+  c0023: c0031=0.79, c0674=0.74, c0030=0.74
+  c0031: c0030=0.89, c0032=0.86, c0023=0.79
+
+== step 5: PCA projection ==
+  explained variance: 0.27, 0.19, 0.15
+  wrote docs/assets/embeddings-3d.svg
+  8 arrows: one per selected chunk, from the origin
+
+== step 6: how to read the plot ==
+  Arrows point in the direction of each chunk's embedding after PCA.
+  Similar directions mean similar meaning in the model's space.
+  PCA keeps the three largest variance directions of 384, so it discards detail.
