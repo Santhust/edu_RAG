@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>edu_RAG — learning site</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow">Learning notes</p>
+    <h1>edu_RAG, explained by running it</h1>
+    <p class="lede">A small retrieval-augmented question-answering system built on one book. These pages walk through it with the real code and the real output, not diagrams of how it might work.</p>
+  </header>
+
+  <main>
+    <h2 class="section-title">Three ways in</h2>
+    <ol class="modules">
+      <li class="module">
+        <span class="module-number" aria-hidden="true">01</span>
+        <div class="module-body">
+          <h3>Follow a question</h3>
+          <p>From a question to a cited answer: scoring 1,404 chunks, fusing lexical and dense scores, assembling the prompt, calling the model, and reusing the cache.</p>
+          <p class="module-meta">Demos 01 and 02 · ready</p>
+        </div>
+      </li>
+      <li class="module">
+        <span class="module-number" aria-hidden="true">02</span>
+        <div class="module-body">
+          <h3>See the score math</h3>
+          <p>Term frequency, inverse document frequency and cosine similarity worked by hand on a tiny example, then the same arithmetic on the real query and real chunk vectors.</p>
+          <p class="module-meta">Demo 03 · planned</p>
+        </div>
+      </li>
+      <li class="module">
+        <span class="module-number" aria-hidden="true">03</span>
+        <div class="module-body">
+          <h3>Inspect the embeddings</h3>
+          <p>What a 384-dimensional vector actually holds, shown with labelled three-dimensional PCA arrows and full vectors you can download and inspect.</p>
+          <p class="module-meta">Demo 04 · planned</p>
+        </div>
+      </li>
+    </ol>
+  </main>
+
+  <footer class="footer">
+    <p><a href="https://github.com/Santhust/edu_RAG">Source repository on GitHub</a></p>
+  </footer>
+</body>
+</html>
