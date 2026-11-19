@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>02 — See the score math · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 02</p>
+    <h1>See the score math</h1>
+    <p class="lede">A ranking is just arithmetic on vectors. This page starts with a three-document example you can check with a pen, then runs the same ideas on the real query and the real index.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — ten steps, from a toy corpus to a real query</h2>
+      <p>The first seven steps use three invented sentences and print every intermediate number. The last three use the question from module 01 and the saved index files. Each step is expandable; long ones start collapsed.</p>
+    </section>
+    <!--demo:03_score_math-->
+
+    <h2 class="section-title">The four pieces of arithmetic</h2>
+    <p>Term frequency counts how often a term appears in a document. Inverse document frequency down-weights terms that appear everywhere:</p>
+    <p><code>idf(t) = ln(N / df(t))</code> with N documents and df(t) documents containing the term.</p>
+    <p>TF-IDF multiplies the two, then L2 normalisation divides every weight by <code>sqrt(sum of squared weights)</code>. After that the vector has length one, so <code>dot(a, b)</code> between two normalised vectors equals the cosine of the angle between them. The same dot product produces both the sparse lexical score and the dense semantic score; only the vectors differ.</p>
+    <p>The real index adds bigrams, a 27,246-term vocabulary and smoothing in the IDF formula, so its numbers will not match the toy exactly. The structure is the same.</p>
+
+    <h2 class="section-title">Fusion is a re-scaling, not a probability</h2>
+    <p>Lexical scores for the example question range from 0.00 to 0.17, while dense scores range from 0.33 to 0.80. Added raw, the dense component would dominate. <code>_minmax()</code> rescales each list to 0–1 separately, then the two are combined:</p>
+    <p><code>final = (1 - w) * minmax(lex) + w * minmax(dense)</code>, with w = 0.50 by default.</p>
+    <p>The result is a relative rank, not a probability. Step 10 asserts that the fused column matches the scores returned by <code>Retriever.search()</code>.</p>
+
+    <h2 class="section-title">Where this lives in the code</h2>
+    <p><code>rag/index.py</code> fits the TF-IDF vectorizer, stores the matrix and computes both score lists. <code>rag/retrieve.py</code> holds <code>_minmax()</code>, the fusion line, the chapter filter and the top-k sort. <code>rag/config.py</code> supplies <code>hybrid_weight</code> and the embedding backend.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Questions that came up while learning this</h2>
+      <p>These are the questions asked while going through the trace. Open one to read the explanation.</p>
+
+      <details class="trace-step">
+        <summary>What is sparse top terms and dense first 12? What is lex and dense?</summary>
+        <p>A TF-IDF vector has one slot per vocabulary term — 27,246 here — and almost every slot is zero for a given chunk. Printing all of them would be useless, so step 9 prints only the largest non-zero entries, with the exact word or bigram and its L2-normalised weight. Those are words actually present in the chunk.</p>
+        <p>A dense embedding has 384 slots, nearly all non-zero, and no slot corresponds to a word. The first 12 coordinates are just a sample of those learned, mixed-sign values; they are not individually interpretable. Full vectors are the subject of module 03.</p>
+        <p><strong>lex</strong> is cosine similarity between the normalised query TF-IDF vector and the normalised chunk TF-IDF vector — high when the wording overlaps. The query has only three non-zero features: <code>bodhisatta</code> 0.47, <code>bodhisatta born</code> 0.78 and <code>born</code> 0.42. <strong>dense</strong> is cosine similarity between the 384-dimensional query and chunk embeddings — high when the meanings are close. Chunk c0023 scores lex 0.10 but dense 0.80: it names the Sakya family and Kapilavatthu rather than repeating the question, yet the embedding recognises it as the passage about the birthplace. Fusion exists to combine those two signals.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Should the sum of L2-normalised weights for all terms equal 0? Why or why not?</summary>
+        <p>No. L2 normalisation divides each value by the vector's length, <code>sqrt(sum of squared values)</code>. The guaranteed result is that the sum of <em>squares</em> equals 1. The plain sum is unconstrained.</p>
+        <p>For the toy query, <code>wept=0.94</code> and <code>prince=0.35</code>: the squares sum to about 1.01 (rounding), while the plain sum is 1.29. Both are fine. TF-IDF weights are never negative, so their plain sum cannot be zero unless every weight is zero. Dense coordinates can be negative and may roughly cancel, but zero-sum is not enforced; forcing it would be mean-centering, a different operation used before PCA for example.</p>
+        <p>Unit length matters because it makes the dot product a cosine similarity. That works for all-positive TF-IDF vectors and for mixed-sign embeddings alike, and a zero-sum rule would discard information without helping the calculation.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>

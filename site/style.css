@@ -117,6 +117,10 @@ pre {
   line-height: 1.5;
 }
 
+.qa { margin: 3rem 0; }
+.qa summary { line-height: 1.5; }
+.qa .trace-step { padding: 0.35rem 0; }
+
 .demo-source { margin: 0 0 1.25rem; }
 .demo-source summary, .trace-step summary {
   cursor: pointer;

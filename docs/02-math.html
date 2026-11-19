@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>02 — See the score math · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 02</p>
+    <h1>See the score math</h1>
+    <p class="lede">A ranking is just arithmetic on vectors. This page starts with a three-document example you can check with a pen, then runs the same ideas on the real query and the real index.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — ten steps, from a toy corpus to a real query</h2>
+      <p>The first seven steps use three invented sentences and print every intermediate number. The last three use the question from module 01 and the saved index files. Each step is expandable; long ones start collapsed.</p>
+    </section>
+    <section class="demo">
+  <h2>03_score_math</h2>
+  <details class="demo-source">
+    <summary>Source: 03_score_math.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;Work TF-IDF and cosine similarity by hand on a three-document toy corpus.
+
+Step 1: tokenise the tiny corpus.
+Step 2: count term frequency in each document.
+Step 3: compute document frequency and IDF for every term.
+Step 4: multiply TF by IDF to get raw weights.
+Step 5: L2-normalise each document vector.
+Step 6: build and normalise the query vector the same way.
+Step 7: dot product equals cosine similarity; rank the documents.
+Step 8: inspect the real query vector in the saved TF-IDF vocabulary.
+Step 9: compare lexical and dense cosine scores for top chunks.
+Step 10: fuse with min-max scaling and print a top-8 score table.
+
+Run from the repo root:
+    .venv/bin/python demos/03_score_math.py
+
+The toy uses plain ln(n/df); the real vectorizer in rag/index.py adds
+smoothing. Steps 8-10 need the index files and the fastembed model in the
+local cache, but make no chat request. All numbers print at 2 decimals.
+&quot;&quot;&quot;</span>
+
+<span class="tok-keyword">import</span> math
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> collections <span class="tok-keyword">import</span> Counter
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
+
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
+
+<span class="tok-keyword">import</span> numpy <span class="tok-keyword">as</span> np
+
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+<span class="tok-keyword">from</span> rag.index <span class="tok-keyword">import</span> DenseIndex, LexicalIndex
+<span class="tok-keyword">from</span> rag.retrieve <span class="tok-keyword">import</span> Retriever, _minmax
+
+DOCS = {
+    <span class="tok-string">&quot;d1&quot;</span>: <span class="tok-string">&quot;the seer saw the child and wept&quot;</span>,
+    <span class="tok-string">&quot;d2&quot;</span>: <span class="tok-string">&quot;the seer saw one lion and the prince&quot;</span>,
+    <span class="tok-string">&quot;d3&quot;</span>: <span class="tok-string">&quot;the prince left the palace and the seer stayed&quot;</span>,
+}
+QUERY = <span class="tok-string">&quot;seer wept prince&quot;</span>
+
+
+<span class="tok-keyword">def</span> <span class="tok-def">tokenize</span>(text: <span class="tok-builtin">str</span>) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
+    <span class="tok-string">&quot;&quot;&quot;Split text into lowercase word tokens.
+
+    Args:
+        text: a short string of prose.
+
+    Returns:
+        One lowercase token per word.
+    &quot;&quot;&quot;</span>
+    <span class="tok-keyword">return</span> text.lower().split()
+
+
+<span class="tok-keyword">def</span> <span class="tok-def">show_vector</span>(title: <span class="tok-builtin">str</span>, vector: <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">float</span>], terms: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]) -&gt; <span class="tok-keyword">None</span>:
+    <span class="tok-string">&quot;&quot;&quot;Print a full vector, one term per line.
+
+    Args:
+        title: heading for the block.
+        vector: term-to-weight mapping.
+        terms: ordered term list so the columns line up.
+
+    Returns:
+        Nothing; prints to stdout.
+    &quot;&quot;&quot;</span>
+    <span class="tok-builtin">print</span>(f&quot;  {title}&quot;)
+    <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> terms:
+        <span class="tok-builtin">print</span>(f&quot;    {term:&lt;9} {vector[term]:&gt;6.2f}&quot;)
+
+
+tokens = {name: tokenize(text) <span class="tok-keyword">for</span> name, text <span class="tok-keyword">in</span> DOCS.items()}
+all_terms = <span class="tok-builtin">sorted</span>({term <span class="tok-keyword">for</span> values <span class="tok-keyword">in</span> tokens.values() <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> values})
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: tokenise the toy corpus ==&quot;</span>)
+<span class="tok-keyword">for</span> name, values <span class="tok-keyword">in</span> tokens.items():
+    <span class="tok-builtin">print</span>(f&quot;  {name}: {values}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  vocabulary ({<span class="tok-builtin">len</span>(all_terms)} terms): {all_terms}&quot;)
+
+tf = {name: Counter(values) <span class="tok-keyword">for</span> name, values <span class="tok-keyword">in</span> tokens.items()}
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: term frequency ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  term        d1  d2  d3&quot;</span>)
+<span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms:
+    <span class="tok-builtin">print</span>(f&quot;  {term:&lt;10} {tf[<span class="tok-string">&#x27;d1&#x27;</span>][term]:&gt;2}  {tf[<span class="tok-string">&#x27;d2&#x27;</span>][term]:&gt;2}  {tf[<span class="tok-string">&#x27;d3&#x27;</span>][term]:&gt;2}&quot;)
+
+df = {term: <span class="tok-builtin">sum</span>(term <span class="tok-keyword">in</span> values <span class="tok-keyword">for</span> values <span class="tok-keyword">in</span> tf.values()) <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms}
+idf = {term: math.log(<span class="tok-builtin">len</span>(DOCS) / df[term]) <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms}
+<span class="tok-builtin">print</span>(f&quot;\n== step 3: document frequency and IDF (n={<span class="tok-builtin">len</span>(DOCS)}) ==&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  term          df   idf = ln(n/df)&quot;</span>)
+<span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms:
+    <span class="tok-builtin">print</span>(f&quot;  {term:&lt;12} {df[term]:&gt;2}    {idf[term]:&gt;6.2f}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Terms in every document get IDF 0.00: that is the stopword effect.&quot;</span>)
+
+weights = {
+    name: {term: tf[name][term] * idf[term] <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms}
+    <span class="tok-keyword">for</span> name <span class="tok-keyword">in</span> DOCS
+}
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: raw TF-IDF weights ==&quot;</span>)
+<span class="tok-keyword">for</span> name <span class="tok-keyword">in</span> DOCS:
+    show_vector(f&quot;{name}:&quot;, weights[name], all_terms)
+
+
+<span class="tok-keyword">def</span> <span class="tok-def">normalise</span>(vector: <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">float</span>]) -&gt; <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">float</span>]:
+    <span class="tok-string">&quot;&quot;&quot;Scale a vector to length one.
+
+    Args:
+        vector: term-to-weight mapping.
+
+    Returns:
+        The same mapping divided by its L2 norm.
+    &quot;&quot;&quot;</span>
+    length = math.sqrt(<span class="tok-builtin">sum</span>(value * value <span class="tok-keyword">for</span> value <span class="tok-keyword">in</span> vector.values()))
+    <span class="tok-keyword">if</span> length == <span class="tok-number">0</span>:
+        <span class="tok-keyword">return</span> <span class="tok-builtin">dict</span>(vector)
+    <span class="tok-keyword">return</span> {term: value / length <span class="tok-keyword">for</span> term, value <span class="tok-keyword">in</span> vector.items()}
+
+
+unit = {name: normalise(weights[name]) <span class="tok-keyword">for</span> name <span class="tok-keyword">in</span> DOCS}
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: L2-normalised document vectors ==&quot;</span>)
+<span class="tok-keyword">for</span> name <span class="tok-keyword">in</span> DOCS:
+    show_vector(f&quot;{name}:&quot;, unit[name], all_terms)
+
+query_tokens = tokenize(QUERY)
+query_weights = {term: query_tokens.count(term) * idf.get(term, <span class="tok-number">0.0</span>) <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms}
+query_unit = normalise(query_weights)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 6: query vector ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  query: {query_tokens}&quot;)
+show_vector(<span class="tok-string">&quot;normalised query:&quot;</span>, query_unit, all_terms)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  &#x27;seer&#x27; appears in all three documents, so its IDF is zero and it vanishes.&quot;</span>)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 7: cosine similarity and ranking ==&quot;</span>)
+scores = {
+    name: <span class="tok-builtin">sum</span>(unit[name][term] * query_unit[term] <span class="tok-keyword">for</span> term <span class="tok-keyword">in</span> all_terms)
+    <span class="tok-keyword">for</span> name <span class="tok-keyword">in</span> DOCS
+}
+<span class="tok-keyword">for</span> name, score <span class="tok-keyword">in</span> scores.items():
+    <span class="tok-builtin">print</span>(f&quot;  {name}: dot(normalised document, normalised query) = {score:.2f}&quot;)
+<span class="tok-keyword">for</span> rank, (name, score) <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(<span class="tok-builtin">sorted</span>(scores.items(), key=<span class="tok-keyword">lambda</span> item: -item[<span class="tok-number">1</span>]), <span class="tok-number">1</span>):
+    <span class="tok-builtin">print</span>(f&quot;  {rank}. {name}  score={score:.2f}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Both vectors have length one, so the dot product IS the cosine similarity.&quot;</span>)
+
+QUESTION = <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
+settings = Settings.load()
+dense_files = <span class="tok-builtin">sorted</span>(settings.index_dir.glob(<span class="tok-string">&quot;dense-*.npy&quot;</span>))
+<span class="tok-keyword">if</span> <span class="tok-keyword">not</span> dense_files:
+    <span class="tok-keyword">raise</span> <span class="tok-builtin">RuntimeError</span>(<span class="tok-string">&quot;No dense index found; run ingest --embed-backend fastembed&quot;</span>)
+backend = dense_files[<span class="tok-number">0</span>].stem.removeprefix(<span class="tok-string">&quot;dense-&quot;</span>).split(<span class="tok-string">&quot;-&quot;</span>)[<span class="tok-number">0</span>]
+settings = settings.overrides(embed_backend=backend)
+
+retriever = Retriever(settings)
+lexical = LexicalIndex(settings).load()
+dense = DenseIndex(settings).load()
+terms = lexical.vectorizer.get_feature_names_out()
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 8: the real query vector in the saved vocabulary ==&quot;</span>)
+query_vector = lexical.vectorizer.transform([QUESTION]).toarray()[<span class="tok-number">0</span>]
+<span class="tok-builtin">print</span>(f&quot;  question: {QUESTION}&quot;)
+<span class="tok-builtin">print</span>(
+    f&quot;  vocabulary: {<span class="tok-builtin">len</span>(terms)} terms | &quot;
+    f&quot;non-zero in query: {<span class="tok-builtin">int</span>((query_vector &gt; <span class="tok-number">0</span>).<span class="tok-builtin">sum</span>())}&quot;
+)
+<span class="tok-keyword">for</span> position <span class="tok-keyword">in</span> np.flatnonzero(query_vector)[:<span class="tok-number">12</span>]:
+    <span class="tok-builtin">print</span>(f&quot;    {terms[position]:&lt;22} {query_vector[position]:&gt;6.2f}&quot;)
+
+lex_scores = lexical.scores(QUESTION)
+dense_scores = dense.scores(QUESTION)
+weight = settings.hybrid_weight
+lex_norm = _minmax(lex_scores)
+dense_norm = _minmax(dense_scores)
+final = (<span class="tok-number">1</span> - weight) * lex_norm + weight * dense_norm
+results = retriever.search(QUESTION, k=<span class="tok-number">8</span>, mode=<span class="tok-string">&quot;hybrid&quot;</span>)
+positions = {chunk.<span class="tok-builtin">id</span>: i <span class="tok-keyword">for</span> i, chunk <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(retriever.chunks)}
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 9: lexical and dense cosine for the top chunks ==&quot;</span>)
+<span class="tok-keyword">for</span> item <span class="tok-keyword">in</span> results[:<span class="tok-number">3</span>]:
+    index = positions[item.chunk.<span class="tok-builtin">id</span>]
+    row = lexical.matrix[index]
+    ranked_terms = <span class="tok-builtin">sorted</span>(np.flatnonzero(row), key=<span class="tok-keyword">lambda</span> p: -row[p])[:<span class="tok-number">12</span>]
+    weights = <span class="tok-string">&quot;, &quot;</span>.join(f&quot;{terms[p]}={row[p]:.2f}&quot; <span class="tok-keyword">for</span> p <span class="tok-keyword">in</span> ranked_terms)
+    dense_head = <span class="tok-string">&quot;, &quot;</span>.join(f&quot;{value:.2f}&quot; <span class="tok-keyword">for</span> value <span class="tok-keyword">in</span> dense.matrix[index][:<span class="tok-number">12</span>])
+    <span class="tok-builtin">print</span>(f&quot;  {item.chunk.<span class="tok-builtin">id</span>} [{item.chunk.citation}]&quot;)
+    <span class="tok-builtin">print</span>(f&quot;    sparse top terms: {weights}&quot;)
+    <span class="tok-builtin">print</span>(f&quot;    dense first 12:   {dense_head}&quot;)
+    <span class="tok-builtin">print</span>(f&quot;    lexical cosine={lex_scores[index]:.2f} | dense cosine={dense_scores[index]:.2f}&quot;)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 10: min-max fusion and top-8 table ==&quot;</span>)
+<span class="tok-builtin">print</span>(
+    f&quot;  lex range {lex_norm.<span class="tok-builtin">min</span>():.2f}..{lex_norm.<span class="tok-builtin">max</span>():.2f} | &quot;
+    f&quot;dense range {dense_norm.<span class="tok-builtin">min</span>():.2f}..{dense_norm.<span class="tok-builtin">max</span>():.2f}&quot;
+)
+<span class="tok-builtin">print</span>(f&quot;  final = {<span class="tok-number">1</span> - weight:.2f} * lex_norm + {weight:.2f} * dense_norm&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rank  id     fused  bars                               lex   dense  source&quot;</span>)
+<span class="tok-keyword">for</span> rank, item <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(results, start=<span class="tok-number">1</span>):
+    index = positions[item.chunk.<span class="tok-builtin">id</span>]
+    bar = <span class="tok-string">&quot;#&quot;</span> * <span class="tok-builtin">round</span>(final[index] * <span class="tok-number">30</span>)
+    <span class="tok-builtin">print</span>(
+        f&quot;  {rank:&gt;2}.  {item.chunk.<span class="tok-builtin">id</span>}  {final[index]:.2f}  {bar:&lt;31} &quot;
+        f&quot;{lex_norm[index]:.2f}   {dense_norm[index]:.2f}   {item.chunk.citation}&quot;
+    )
+<span class="tok-keyword">assert</span> <span class="tok-builtin">all</span>(
+    <span class="tok-builtin">abs</span>(final[positions[item.chunk.<span class="tok-builtin">id</span>]] - item.score) &lt; <span class="tok-number">1e-6</span> <span class="tok-keyword">for</span> item <span class="tok-keyword">in</span> results
+)
+<span class="tok-builtin">print</span>(
+    f&quot;  Asserted: fused column == {<span class="tok-number">1</span> - weight:.2f}*lex_norm + &quot;
+    f&quot;{weight:.2f}*dense_norm, matching Retriever.search.&quot;
+)
+</code></pre>
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: tokenise the toy corpus</summary>
+  <pre>  d1: [&#x27;the&#x27;, &#x27;seer&#x27;, &#x27;saw&#x27;, &#x27;the&#x27;, &#x27;child&#x27;, &#x27;and&#x27;, &#x27;wept&#x27;]
+  d2: [&#x27;the&#x27;, &#x27;seer&#x27;, &#x27;saw&#x27;, &#x27;one&#x27;, &#x27;lion&#x27;, &#x27;and&#x27;, &#x27;the&#x27;, &#x27;prince&#x27;]
+  d3: [&#x27;the&#x27;, &#x27;prince&#x27;, &#x27;left&#x27;, &#x27;the&#x27;, &#x27;palace&#x27;, &#x27;and&#x27;, &#x27;the&#x27;, &#x27;seer&#x27;, &#x27;stayed&#x27;]
+  vocabulary (12 terms): [&#x27;and&#x27;, &#x27;child&#x27;, &#x27;left&#x27;, &#x27;lion&#x27;, &#x27;one&#x27;, &#x27;palace&#x27;, &#x27;prince&#x27;, &#x27;saw&#x27;, &#x27;seer&#x27;, &#x27;stayed&#x27;, &#x27;the&#x27;, &#x27;wept&#x27;]</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 2: term frequency</summary>
+  <pre>  term        d1  d2  d3
+  and         1   1   1
+  child       1   0   0
+  left        0   0   1
+  lion        0   1   0
+  one         0   1   0
+  palace      0   0   1
+  prince      0   1   1
+  saw         1   1   0
+  seer        1   1   1
+  stayed      0   0   1
+  the         2   2   3
+  wept        1   0   0</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 3: document frequency and IDF (n=3)</summary>
+  <pre>  term          df   idf = ln(n/df)
+  and           3      0.00
+  child         1      1.10
+  left          1      1.10
+  lion          1      1.10
+  one           1      1.10
+  palace        1      1.10
+  prince        2      0.41
+  saw           2      0.41
+  seer          3      0.00
+  stayed        1      1.10
+  the           3      0.00
+  wept          1      1.10
+  Terms in every document get IDF 0.00: that is the stopword effect.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 4: raw TF-IDF weights</summary>
+  <pre>  d1:
+    and         0.00
+    child       1.10
+    left        0.00
+    lion        0.00
+    one         0.00
+    palace      0.00
+    prince      0.00
+    saw         0.41
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        1.10
+  d2:
+    and         0.00
+    child       0.00
+    left        0.00
+    lion        1.10
+    one         1.10
+    palace      0.00
+    prince      0.41
+    saw         0.41
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.00
+  d3:
+    and         0.00
+    child       0.00
+    left        1.10
+    lion        0.00
+    one         0.00
+    palace      1.10
+    prince      0.41
+    saw         0.00
+    seer        0.00
+    stayed      1.10
+    the         0.00
+    wept        0.00</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 5: L2-normalised document vectors</summary>
+  <pre>  d1:
+    and         0.00
+    child       0.68
+    left        0.00
+    lion        0.00
+    one         0.00
+    palace      0.00
+    prince      0.00
+    saw         0.25
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.68
+  d2:
+    and         0.00
+    child       0.00
+    left        0.00
+    lion        0.66
+    one         0.66
+    palace      0.00
+    prince      0.24
+    saw         0.24
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.00
+  d3:
+    and         0.00
+    child       0.00
+    left        0.56
+    lion        0.00
+    one         0.00
+    palace      0.56
+    prince      0.21
+    saw         0.00
+    seer        0.00
+    stayed      0.56
+    the         0.00
+    wept        0.00</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 6: query vector</summary>
+  <pre>  query: [&#x27;seer&#x27;, &#x27;wept&#x27;, &#x27;prince&#x27;]
+  normalised query:
+    and         0.00
+    child       0.00
+    left        0.00
+    lion        0.00
+    one         0.00
+    palace      0.00
+    prince      0.35
+    saw         0.00
+    seer        0.00
+    stayed      0.00
+    the         0.00
+    wept        0.94
+  &#x27;seer&#x27; appears in all three documents, so its IDF is zero and it vanishes.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 7: cosine similarity and ranking</summary>
+  <pre>  d1: dot(normalised document, normalised query) = 0.64
+  d2: dot(normalised document, normalised query) = 0.08
+  d3: dot(normalised document, normalised query) = 0.07
+  1. d1  score=0.64
+  2. d2  score=0.08
+  3. d3  score=0.07
+  Both vectors have length one, so the dot product IS the cosine similarity.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 8: the real query vector in the saved vocabulary</summary>
+  <pre>  question: Where was the bodhisatta born?
+  vocabulary: 27246 terms | non-zero in query: 3
+    bodhisatta               0.47
+    bodhisatta born          0.78
+    born                     0.42</pre>
+</details>
+
+<details class="trace-step">
+  <summary>step 9: lexical and dense cosine for the top chunks</summary>
+  <pre>  c0030 [pp. 16-17, Birth]
+    sparse top terms: bodhisatta mother=0.22, mother gave=0.20, gave birth=0.19, bodhisatta=0.18, birth bodhisatta=0.17, womb=0.16, beige=0.15, beige thread=0.15, blue yellow=0.15, lunar=0.15, strung=0.15, strung blue=0.15
+    dense first 12:   -0.05, -0.01, -0.07, 0.03, -0.06, 0.04, 0.07, -0.01, 0.00, -0.03, 0.03, -0.00
+    lexical cosine=0.17 | dense cosine=0.67
+  c0032 [pp. 17-18, Birth]
+    sparse top terms: left mother=0.16, unsullied=0.16, bodhisatta left=0.15, radiance surpassing=0.15, effulgence=0.15, great measureless=0.15, measureless=0.15, measureless radiance=0.15, surpassing effulgence=0.15, mother womb=0.14, bodhisatta=0.14, womb=0.12
+    dense first 12:   -0.03, 0.01, -0.05, 0.02, -0.03, -0.02, 0.07, -0.03, 0.00, -0.01, 0.00, -0.03
+    lexical cosine=0.16 | dense cosine=0.68
+  c0023 [p. 14, Birth]
+    sparse top terms: capital city=0.18, bodhisatta=0.17, capital=0.16, kapilavatthu=0.16, named=0.15, sakyan=0.14, father=0.14, city=0.13, 14 canon=0.12, accounts later=0.12, birth named=0.12, bodhisatta buddha=0.12
+    dense first 12:   0.04, 0.04, -0.07, -0.02, -0.04, 0.03, 0.08, -0.05, -0.04, 0.02, 0.02, -0.05
+    lexical cosine=0.10 | dense cosine=0.80</pre>
+</details>
+
+<details class="trace-step">
+  <summary>step 10: min-max fusion and top-8 table</summary>
+  <pre>  lex range 0.00..1.00 | dense range 0.00..1.00
+  final = 0.50 * lex_norm + 0.50 * dense_norm
+  rank  id     fused  bars                               lex   dense  source
+   1.  c0030  0.86  ##########################      1.00   0.72   pp. 16-17, Birth
+   2.  c0032  0.83  #########################       0.93   0.73   pp. 17-18, Birth
+   3.  c0023  0.80  ########################        0.60   1.00   p. 14, Birth
+   4.  c0031  0.70  #####################           0.63   0.76   p. 17, Birth
+   5.  c0027  0.57  #################               0.37   0.76   pp. 15-16, Birth
+   6.  c0029  0.55  #################               0.42   0.68   pp. 16-17, Birth
+   7.  c0085  0.55  ################                0.40   0.70   p. 43, The Noble Search
+   8.  c0028  0.53  ################                0.39   0.68   p. 16, Birth
+  Asserted: fused column == 0.50*lex_norm + 0.50*dense_norm, matching Retriever.search.</pre>
+</details>
+
+  <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/03_score_math.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/03_score_math.txt">output on GitHub</a></p>
+</section>
+
+
+    <h2 class="section-title">The four pieces of arithmetic</h2>
+    <p>Term frequency counts how often a term appears in a document. Inverse document frequency down-weights terms that appear everywhere:</p>
+    <p><code>idf(t) = ln(N / df(t))</code> with N documents and df(t) documents containing the term.</p>
+    <p>TF-IDF multiplies the two, then L2 normalisation divides every weight by <code>sqrt(sum of squared weights)</code>. After that the vector has length one, so <code>dot(a, b)</code> between two normalised vectors equals the cosine of the angle between them. The same dot product produces both the sparse lexical score and the dense semantic score; only the vectors differ.</p>
+    <p>The real index adds bigrams, a 27,246-term vocabulary and smoothing in the IDF formula, so its numbers will not match the toy exactly. The structure is the same.</p>
+
+    <h2 class="section-title">Fusion is a re-scaling, not a probability</h2>
+    <p>Lexical scores for the example question range from 0.00 to 0.17, while dense scores range from 0.33 to 0.80. Added raw, the dense component would dominate. <code>_minmax()</code> rescales each list to 0–1 separately, then the two are combined:</p>
+    <p><code>final = (1 - w) * minmax(lex) + w * minmax(dense)</code>, with w = 0.50 by default.</p>
+    <p>The result is a relative rank, not a probability. Step 10 asserts that the fused column matches the scores returned by <code>Retriever.search()</code>.</p>
+
+    <h2 class="section-title">Where this lives in the code</h2>
+    <p><code>rag/index.py</code> fits the TF-IDF vectorizer, stores the matrix and computes both score lists. <code>rag/retrieve.py</code> holds <code>_minmax()</code>, the fusion line, the chapter filter and the top-k sort. <code>rag/config.py</code> supplies <code>hybrid_weight</code> and the embedding backend.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Questions that came up while learning this</h2>
+      <p>These are the questions asked while going through the trace. Open one to read the explanation.</p>
+
+      <details class="trace-step">
+        <summary>What is sparse top terms and dense first 12? What is lex and dense?</summary>
+        <p>A TF-IDF vector has one slot per vocabulary term — 27,246 here — and almost every slot is zero for a given chunk. Printing all of them would be useless, so step 9 prints only the largest non-zero entries, with the exact word or bigram and its L2-normalised weight. Those are words actually present in the chunk.</p>
+        <p>A dense embedding has 384 slots, nearly all non-zero, and no slot corresponds to a word. The first 12 coordinates are just a sample of those learned, mixed-sign values; they are not individually interpretable. Full vectors are the subject of module 03.</p>
+        <p><strong>lex</strong> is cosine similarity between the normalised query TF-IDF vector and the normalised chunk TF-IDF vector — high when the wording overlaps. The query has only three non-zero features: <code>bodhisatta</code> 0.47, <code>bodhisatta born</code> 0.78 and <code>born</code> 0.42. <strong>dense</strong> is cosine similarity between the 384-dimensional query and chunk embeddings — high when the meanings are close. Chunk c0023 scores lex 0.10 but dense 0.80: it names the Sakya family and Kapilavatthu rather than repeating the question, yet the embedding recognises it as the passage about the birthplace. Fusion exists to combine those two signals.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Should the sum of L2-normalised weights for all terms equal 0? Why or why not?</summary>
+        <p>No. L2 normalisation divides each value by the vector's length, <code>sqrt(sum of squared values)</code>. The guaranteed result is that the sum of <em>squares</em> equals 1. The plain sum is unconstrained.</p>
+        <p>For the toy query, <code>wept=0.94</code> and <code>prince=0.35</code>: the squares sum to about 1.01 (rounding), while the plain sum is 1.29. Both are fine. TF-IDF weights are never negative, so their plain sum cannot be zero unless every weight is zero. Dense coordinates can be negative and may roughly cancel, but zero-sum is not enforced; forcing it would be mean-centering, a different operation used before PCA for example.</p>
+        <p>Unit length matters because it makes the dot product a cosine similarity. That works for all-positive TF-IDF vectors and for mixed-sign embeddings alike, and a zero-sum rule would discard information without helping the calculation.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>
