@@ -142,3 +142,38 @@
   2. d2  score=0.08
   3. d3  score=0.07
   Both vectors have length one, so the dot product IS the cosine similarity.
+
+== step 8: the real query vector in the saved vocabulary ==
+  question: Where was the bodhisatta born?
+  vocabulary: 27246 terms | non-zero in query: 3
+    bodhisatta               0.47
+    bodhisatta born          0.78
+    born                     0.42
+
+== step 9: lexical and dense cosine for the top chunks ==
+  c0030 [pp. 16-17, Birth]
+    sparse top terms: bodhisatta mother=0.22, mother gave=0.20, gave birth=0.19, bodhisatta=0.18, birth bodhisatta=0.17, womb=0.16, beige=0.15, beige thread=0.15, blue yellow=0.15, lunar=0.15, strung=0.15, strung blue=0.15
+    dense first 12:   -0.05, -0.01, -0.07, 0.03, -0.06, 0.04, 0.07, -0.01, 0.00, -0.03, 0.03, -0.00
+    lexical cosine=0.17 | dense cosine=0.67
+  c0032 [pp. 17-18, Birth]
+    sparse top terms: left mother=0.16, unsullied=0.16, bodhisatta left=0.15, radiance surpassing=0.15, effulgence=0.15, great measureless=0.15, measureless=0.15, measureless radiance=0.15, surpassing effulgence=0.15, mother womb=0.14, bodhisatta=0.14, womb=0.12
+    dense first 12:   -0.03, 0.01, -0.05, 0.02, -0.03, -0.02, 0.07, -0.03, 0.00, -0.01, 0.00, -0.03
+    lexical cosine=0.16 | dense cosine=0.68
+  c0023 [p. 14, Birth]
+    sparse top terms: capital city=0.18, bodhisatta=0.17, capital=0.16, kapilavatthu=0.16, named=0.15, sakyan=0.14, father=0.14, city=0.13, 14 canon=0.12, accounts later=0.12, birth named=0.12, bodhisatta buddha=0.12
+    dense first 12:   0.04, 0.04, -0.07, -0.02, -0.04, 0.03, 0.08, -0.05, -0.04, 0.02, 0.02, -0.05
+    lexical cosine=0.10 | dense cosine=0.80
+
+== step 10: min-max fusion and top-8 table ==
+  lex range 0.00..1.00 | dense range 0.00..1.00
+  final = 0.50 * lex_norm + 0.50 * dense_norm
+  rank  id     fused  bars                               lex   dense  source
+   1.  c0030  0.86  ##########################      1.00   0.72   pp. 16-17, Birth
+   2.  c0032  0.83  #########################       0.93   0.73   pp. 17-18, Birth
+   3.  c0023  0.80  ########################        0.60   1.00   p. 14, Birth
+   4.  c0031  0.70  #####################           0.63   0.76   p. 17, Birth
+   5.  c0027  0.57  #################               0.37   0.76   pp. 15-16, Birth
+   6.  c0029  0.55  #################               0.42   0.68   pp. 16-17, Birth
+   7.  c0085  0.55  ################                0.40   0.70   p. 43, The Noble Search
+   8.  c0028  0.53  ################                0.39   0.68   p. 16, Birth
+  Asserted: fused column == 0.50*lex_norm + 0.50*dense_norm, matching Retriever.search.

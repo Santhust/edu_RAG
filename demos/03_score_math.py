@@ -7,17 +7,30 @@ Step 4: multiply TF by IDF to get raw weights.
 Step 5: L2-normalise each document vector.
 Step 6: build and normalise the query vector the same way.
 Step 7: dot product equals cosine similarity; rank the documents.
+Step 8: inspect the real query vector in the saved TF-IDF vocabulary.
+Step 9: compare lexical and dense cosine scores for top chunks.
+Step 10: fuse with min-max scaling and print a top-8 score table.
 
 Run from the repo root:
     .venv/bin/python demos/03_score_math.py
 
-No index file, no model and no network. The real vectorizer in rag/index.py
-adds smoothing; this toy uses plain ln(n/df) so the numbers are easy to check.
-All numbers print at 2 decimals.
+The toy uses plain ln(n/df); the real vectorizer in rag/index.py adds
+smoothing. Steps 8-10 need the index files and the fastembed model in the
+local cache, but make no chat request. All numbers print at 2 decimals.
 """
 
 import math
+import sys
 from collections import Counter
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import numpy as np
+
+from rag.config import Settings
+from rag.index import DenseIndex, LexicalIndex
+from rag.retrieve import Retriever, _minmax
 
 DOCS = {
     "d1": "the seer saw the child and wept",
@@ -123,3 +136,69 @@ for name, score in scores.items():
 for rank, (name, score) in enumerate(sorted(scores.items(), key=lambda item: -item[1]), 1):
     print(f"  {rank}. {name}  score={score:.2f}")
 print("  Both vectors have length one, so the dot product IS the cosine similarity.")
+
+QUESTION = "Where was the bodhisatta born?"
+settings = Settings.load()
+dense_files = sorted(settings.index_dir.glob("dense-*.npy"))
+if not dense_files:
+    raise RuntimeError("No dense index found; run ingest --embed-backend fastembed")
+backend = dense_files[0].stem.removeprefix("dense-").split("-")[0]
+settings = settings.overrides(embed_backend=backend)
+
+retriever = Retriever(settings)
+lexical = LexicalIndex(settings).load()
+dense = DenseIndex(settings).load()
+terms = lexical.vectorizer.get_feature_names_out()
+
+print("\n== step 8: the real query vector in the saved vocabulary ==")
+query_vector = lexical.vectorizer.transform([QUESTION]).toarray()[0]
+print(f"  question: {QUESTION}")
+print(
+    f"  vocabulary: {len(terms)} terms | "
+    f"non-zero in query: {int((query_vector > 0).sum())}"
+)
+for position in np.flatnonzero(query_vector)[:12]:
+    print(f"    {terms[position]:<22} {query_vector[position]:>6.2f}")
+
+lex_scores = lexical.scores(QUESTION)
+dense_scores = dense.scores(QUESTION)
+weight = settings.hybrid_weight
+lex_norm = _minmax(lex_scores)
+dense_norm = _minmax(dense_scores)
+final = (1 - weight) * lex_norm + weight * dense_norm
+results = retriever.search(QUESTION, k=8, mode="hybrid")
+positions = {chunk.id: i for i, chunk in enumerate(retriever.chunks)}
+
+print("\n== step 9: lexical and dense cosine for the top chunks ==")
+for item in results[:3]:
+    index = positions[item.chunk.id]
+    row = lexical.matrix[index]
+    ranked_terms = sorted(np.flatnonzero(row), key=lambda p: -row[p])[:12]
+    weights = ", ".join(f"{terms[p]}={row[p]:.2f}" for p in ranked_terms)
+    dense_head = ", ".join(f"{value:.2f}" for value in dense.matrix[index][:12])
+    print(f"  {item.chunk.id} [{item.chunk.citation}]")
+    print(f"    sparse top terms: {weights}")
+    print(f"    dense first 12:   {dense_head}")
+    print(f"    lexical cosine={lex_scores[index]:.2f} | dense cosine={dense_scores[index]:.2f}")
+
+print("\n== step 10: min-max fusion and top-8 table ==")
+print(
+    f"  lex range {lex_norm.min():.2f}..{lex_norm.max():.2f} | "
+    f"dense range {dense_norm.min():.2f}..{dense_norm.max():.2f}"
+)
+print(f"  final = {1 - weight:.2f} * lex_norm + {weight:.2f} * dense_norm")
+print("  rank  id     fused  bars                               lex   dense  source")
+for rank, item in enumerate(results, start=1):
+    index = positions[item.chunk.id]
+    bar = "#" * round(final[index] * 30)
+    print(
+        f"  {rank:>2}.  {item.chunk.id}  {final[index]:.2f}  {bar:<31} "
+        f"{lex_norm[index]:.2f}   {dense_norm[index]:.2f}   {item.chunk.citation}"
+    )
+assert all(
+    abs(final[positions[item.chunk.id]] - item.score) < 1e-6 for item in results
+)
+print(
+    f"  Asserted: fused column == {1 - weight:.2f}*lex_norm + "
+    f"{weight:.2f}*dense_norm, matching Retriever.search."
+)
