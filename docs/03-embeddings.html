@@ -323,6 +323,17 @@ svg_path.write_text(arrow_svg(projected, labels, colors), encoding=<span class="
         <p>The query is transformed into the same 27,246-column space, so matching columns mean the same thing. Change <code>max_features</code> or <code>ngram_range</code> and the dimension changes, requiring a re-ingest; the dense model's 384 dimensions are fixed by its architecture.</p>
         <p>TF-IDF has no learned embedding table. You can picture it as an identity matrix of size 27,246 × 27,246: term <em>j</em> maps to a 1 in column <em>j</em> and zeros elsewhere. That is why each coordinate is readable and why the matrix is stored sparsely. People call this the feature space rather than the embedding dimension, but it is the dimensionality of each chunk's vector.</p>
       </details>
+
+      <details class="trace-step">
+        <summary>How can a whole chunk become one 384-dimensional vector? I can picture a word as a vector, but not a variable-length chunk.</summary>
+        <p>The chunk is not being put into a new kind of space — it ends up in the same 384-dimensional space as its tokens. First the text is split into L tokens (up to 512 here). The transformer turns those into L vectors of 384 numbers, an L × 384 matrix. Each token vector is contextual: <code>born</code> gets a different vector depending on its neighbours.</p>
+        <p>Then the model pools those L rows into one. The BGE/fastembed path here uses mean pooling, so each output coordinate is the average of that coordinate across the tokens:</p>
+        <p><code>chunk_vector[j] = (token_1[j] + token_2[j] + ... + token_L[j]) / L</code></p>
+        <p>A five-dimensional toy version with three tokens:</p>
+        <p><code>t1 = [ 0.20, -0.10,  0.40,  0.00,  0.30]<br>t2 = [ 0.00,  0.20,  0.20, -0.50,  0.10]<br>t3 = [ 0.40,  0.00, -0.30,  0.50,  0.20]<br>mean = [0.20, 0.03, 0.10, 0.00, 0.20]</code></p>
+        <p>The same operation runs with 384 columns and however many tokens the chunk has. That is why arbitrary chunk length produces a fixed-size vector. TF-IDF gets a fixed size by counting named terms; the dense model gets it by averaging learned feature vectors. The chunk vector is like a centre of mass of its token vectors, then L2-normalised to length one — exactly the numbers stored in the dense <code>.npy</code> file and printed in demo 04.</p>
+        <p>Averaging does lose exact wording and word order, which is why the system keeps the original chunk text for the prompt. The vector is a retrieval summary, not a faithful encoding. It works because training pushes the averaged vectors of related passages toward similar directions, and the question is reduced to a 384-number vector the same way, so the two can be compared by cosine similarity.</p>
+      </details>
     </section>
   </main>
 
