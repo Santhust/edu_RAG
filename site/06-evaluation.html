@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>06 — Measure whether it works · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 06</p>
+    <h1>Measure whether it works</h1>
+    <p class="lede">The first five modules showed how the system works. This one asks whether it works: fourteen fixed questions, two retrieval settings, and three numbers that decide if the right evidence was found.</p>
+  </header>
+
+  <main>
+    <h2 class="section-title">Worked example — fourteen questions, two settings</h2>
+    <p>The golden set in <code>eval/golden_qa.json</code> pairs each question with the pages and chapter the answer should come from. <code>rag/evaluate.py</code> runs retrieval against that set and scores the result. Here are the measured numbers at <code>k=8</code>, copied from the repository README.</p>
+
+    <table>
+      <thead>
+        <tr><th>mode</th><th>page recall</th><th>MRR</th><th>chapter accuracy</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>TF-IDF only</td><td>71%</td><td>0.36</td><td>79%</td></tr>
+        <tr><td>hybrid (TF-IDF + fastembed)</td><td>86%</td><td>0.48</td><td>93%</td></tr>
+      </tbody>
+    </table>
+
+    <p>Page recall asks whether the pages cited by the golden answer appear among the retrieved chunks. MRR, mean reciprocal rank, rewards putting the first correct page near the top rather than somewhere in the eight. Chapter accuracy asks whether the retrieved chapter matches the expected one. Adding dense semantic matching lifted recall from 71% to 86% and chapter accuracy from 79% to 93%; it also moved the first correct evidence earlier, from 0.36 to 0.48.</p>
+    <p>That gain comes from the embedding model and the score fusion in <code>retrieve.py</code>, not from Chroma or LlamaIndex. Modules 04 and 05 changed how the system is built, not these retrieval numbers.</p>
+
+    <h2 class="section-title">Answer quality is a separate question</h2>
+    <p>Retrieval can be good while generation still fails. A full 14-question answer run with hybrid retrieval at <code>k=4</code> gave <code>qwen2.5:3b</code> a 50% citation rate and a 0.79 average keyword score. That run was capped at 160 output tokens, which truncated some citations; with the default 700-token cap in <code>ask</code>, citations appear reliably. <code>gemma3:1b</code> scored 0% citations and produced off-topic answers on several questions.</p>
+    <p>Those answer-quality numbers were measured before the local default changed to <code>lfm3:latest</code>. They describe qwen and gemma, not the current default, which has not been benchmarked on this golden set. Model capability matters as much as retrieval: a cloud model usually gives the cleanest grounding behaviour, while the local models are kept for comparison.</p>
+
+    <h2 class="section-title">Read the numbers honestly</h2>
+    <p>Everything here was measured on one CPU-only machine, on one book, with fourteen golden questions. The table is evidence about this setup, not a promise about another corpus, model or machine. To reproduce or extend it, run <code>eval --dry-run -k 8</code> for the retrieval-only metrics, or <code>eval -k 4</code> for the slower full answer run. Partial results are saved after every question under <code>data/cache/</code>.</p>
+    <p>You can inspect the inputs and the scorer directly: <a href="https://github.com/Santhust/edu_RAG/blob/main/eval/golden_qa.json">the golden questions</a> and <a href="https://github.com/Santhust/edu_RAG/blob/main/rag/evaluate.py">the evaluation code</a>. Every demo page also links its own source and captured output on GitHub.</p>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>

@@ -121,6 +121,23 @@ pre {
 .qa summary { line-height: 1.5; }
 .qa .trace-step { padding: 0.35rem 0; }
 
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+th { font-weight: 600; }
+th:not(:first-child), td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 figure { margin: 2rem 0; }
 figure img {
   display: block;
