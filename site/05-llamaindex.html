@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>05 — Let a framework run the pipeline · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 05</p>
+    <h1>Let a framework run the pipeline</h1>
+    <p class="lede">The first four modules built each gear by hand. LlamaIndex replaces the wiring: documents, an index and a query engine take a question all the way to an answer. This page shows what stays the same underneath and what the framework actually takes over.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — one question through a query engine</h2>
+      <p>The trace wraps the same 1,404 chunks as LlamaIndex Documents, builds a vector index with our local embedding adapter, retrieves nodes without an LLM, then asks the query engine for an answer. The last step is live; its output is a snapshot. Each step is expandable.</p>
+    </section>
+    <!--demo:06_llamaindex_engine-->
+
+    <h2 class="section-title">What the framework took over</h2>
+    <p>Our own path in module 01 is a chain of explicit calls: <code>load_chunks()</code>, <code>Retriever.search()</code>, <code>format_context()</code>, <code>llm.chat()</code>. LlamaIndex packages that chain as <code>Document → VectorStoreIndex → QueryEngine</code>. You give it documents and an embedding function; the engine embeds the question, retrieves, builds a prompt, calls the LLM and returns an answer with sources.</p>
+    <p>Two things did not change: the vectors still come from our fastembed adapter over bge-small-en-v1.5, and generation still goes to Ollama. LlamaIndex owns the orchestration, not the model. The adapter is only about fifteen lines in <code>rag/capstone.py</code>, which is why the framework could be used without replacing the embedding stack.</p>
+
+    <h2 class="section-title">Three views of the same book</h2>
+    <p>Module 01's hybrid retriever returned c0030, c0032, c0023 and c0031 by fusing lexical and dense scores. Module 04's Chroma collection, using Chroma's own default embedding, returned c0030, c0032, c0023 and c0024 with cosine distances 0.35, 0.35, 0.36 and 0.39. Here LlamaIndex retrieves pages 14, 17, 15 and 14 in the Birth chapter with scores 0.81, 0.75, 0.73 and 0.73. The first three chunks recur because the underlying text and the question are the same; the ordering differs because the embedding model and scoring rules differ.</p>
+    <p>Notice also what the answer is not. Our own <code>generate.py</code> prompt demands one citation per sentence and an explicit "I don't know" when evidence is absent. The query engine uses its own default prompt, so its answer quotes source passages but does not follow that strict contract. A framework saves wiring; it does not inherit your teaching rules automatically.</p>
+
+    <h2 class="section-title">The capstone, complete</h2>
+    <p>Chroma answered "where do the vectors live and how are they searched?" LlamaIndex answers "how do I turn documents and a question into an answer?" The from-scratch code in <code>chunk.py</code>, <code>index.py</code>, <code>retrieve.py</code>, <code>generate.py</code> and <code>llm.py</code> answers both by showing every step. That comparison is stage 7 of the README's learning path: not a different RAG system, but the same system expressed at three levels of abstraction.</p>
+    <p>The step 5 answer is a captured snapshot. LlamaIndex does not use this repo's response cache, so running the demo again may produce different wording even with thinking off.</p>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>05 — Let a framework run the pipeline · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 05</p>
+    <h1>Let a framework run the pipeline</h1>
+    <p class="lede">The first four modules built each gear by hand. LlamaIndex replaces the wiring: documents, an index and a query engine take a question all the way to an answer. This page shows what stays the same underneath and what the framework actually takes over.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — one question through a query engine</h2>
+      <p>The trace wraps the same 1,404 chunks as LlamaIndex Documents, builds a vector index with our local embedding adapter, retrieves nodes without an LLM, then asks the query engine for an answer. The last step is live; its output is a snapshot. Each step is expandable.</p>
+    </section>
+    <section class="demo">
+  <h2>06_llamaindex_engine</h2>
+  <details class="demo-source">
+    <summary>Source: 06_llamaindex_engine.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;See LlamaIndex wrap retrieval and generation into one query engine.
+
+Step 1: state the question, the local model and the embedding adapter.
+Step 2: turn the same chunks into LlamaIndex Documents with metadata.
+Step 3: build a VectorStoreIndex using our local fastembed adapter.
+Step 4: retrieve nodes without calling the LLM.
+Step 5: ask the query engine, which retrieves, prompts and calls Ollama.
+Step 6: name what the framework replaced and where the boundary is.
+
+Run from the repo root:
+    .venv/bin/python demos/06_llamaindex_engine.py &gt; demos/06_llamaindex_engine.txt
+
+This is the code path behind `python -m rag.cli capstone --tool llamaindex`.
+The step 5 answer is a snapshot: LlamaIndex does not use this repo&#x27;s response
+cache, so a rerun can produce different wording. All numbers print at 2 decimals.
+&quot;&quot;&quot;</span>
+
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
+
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
+
+<span class="tok-keyword">from</span> llama_index.core <span class="tok-keyword">import</span> Document, VectorStoreIndex
+<span class="tok-keyword">from</span> llama_index.core <span class="tok-keyword">import</span> Settings <span class="tok-keyword">as</span> LISettings
+<span class="tok-keyword">from</span> llama_index.llms.ollama <span class="tok-keyword">import</span> Ollama
+
+<span class="tok-keyword">from</span> rag.capstone <span class="tok-keyword">import</span> _local_embedder_class
+<span class="tok-keyword">from</span> rag.chunk <span class="tok-keyword">import</span> load_chunks
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+
+QUESTION = <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
+
+
+settings = Settings.load()
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: question and wiring ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  question: {QUESTION}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  generation: {settings.llm_backend} / {settings.llm_model}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  embedding: {settings.embed_model}, through the capstone adapter&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  thinking: off, to keep the local model&#x27;s output bounded&quot;</span>)
+
+chunks = load_chunks(settings)
+documents = [
+    Document(
+        text=chunk.text,
+        metadata={
+            <span class="tok-string">&quot;chapter&quot;</span>: chunk.chapter,
+            <span class="tok-string">&quot;section&quot;</span>: chunk.section,
+            <span class="tok-string">&quot;page&quot;</span>: chunk.page_start,
+        },
+    )
+    <span class="tok-keyword">for</span> chunk <span class="tok-keyword">in</span> chunks
+]
+first = documents[<span class="tok-number">0</span>]
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: chunks become Documents ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  Documents: {<span class="tok-builtin">len</span>(documents)} from {<span class="tok-builtin">len</span>(chunks)} chunks&quot;)
+<span class="tok-builtin">print</span>(f&quot;  first metadata: {first.metadata}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  first text: {<span class="tok-string">&#x27; &#x27;</span>.join(first.text.split())[:<span class="tok-number">110</span>]}...&quot;)
+
+Embedder = _local_embedder_class()
+LISettings.embed_model = Embedder(model_name=settings.embed_model)
+LISettings.llm = Ollama(
+    model=settings.llm_model,
+    request_timeout=settings.request_timeout,
+    thinking=<span class="tok-keyword">False</span>,
+    additional_kwargs={<span class="tok-string">&quot;num_predict&quot;</span>: <span class="tok-number">500</span>},
+)
+index = VectorStoreIndex.from_documents(documents)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 3: build the index ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  index type: {<span class="tok-builtin">type</span>(index).<span class="tok-builtin">__name__</span>}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  VectorStoreIndex embedded every Document with the local adapter.&quot;</span>)
+
+engine = index.as_query_engine(similarity_top_k=<span class="tok-number">4</span>)
+nodes = engine.retrieve(QUESTION)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: retrieve without an LLM call ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rank  score  page  chapter&quot;</span>)
+<span class="tok-keyword">for</span> rank, item <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(nodes, start=<span class="tok-number">1</span>):
+    <span class="tok-keyword">assert</span> item.score <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>
+    node = item.node
+    <span class="tok-builtin">print</span>(
+        f&quot;  {rank:&gt;2}.   {item.score:.2f}   {node.metadata[<span class="tok-string">&#x27;page&#x27;</span>]:&gt;3}  &quot;
+        f&quot;{node.metadata[<span class="tok-string">&#x27;chapter&#x27;</span>]}&quot;
+    )
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: query the engine (live local call) ==&quot;</span>)
+response = engine.query(QUESTION)
+<span class="tok-builtin">print</span>(f&quot;  answer: {<span class="tok-string">&#x27; &#x27;</span>.join(<span class="tok-builtin">str</span>(response).split())}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  This line is a captured snapshot, not a reproducible score.&quot;</span>)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 6: what the framework owns ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Document + Index + QueryEngine replaced our chunk/index/prompt/LLM wiring.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  The vector model is still ours; the LLM is still Ollama.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Unlike rag/llm.py, this path has no response cache; no answer is reused.&quot;</span>)
+</code></pre>
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: question and wiring</summary>
+  <pre>  question: Where was the bodhisatta born?
+  generation: ollama / lfm3:latest
+  embedding: BAAI/bge-small-en-v1.5, through the capstone adapter
+  thinking: off, to keep the local model&#x27;s output bounded</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 2: chunks become Documents</summary>
+  <pre>  Documents: 1404 from 1404 chunks
+  first metadata: {&#x27;chapter&#x27;: &#x27;Front matter&#x27;, &#x27;section&#x27;: &#x27;Introduction&#x27;, &#x27;page&#x27;: 1}
+  first text: A LIFE OF THE BUDDHA COMPILED FROM THE PĀLI CANON by Ṭhānissaro Bhikkhu (Geoffrey DeGraff) &amp; Khematto Bhikkhu ...</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 3: build the index</summary>
+  <pre>  index type: VectorStoreIndex
+  VectorStoreIndex embedded every Document with the local adapter.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 4: retrieve without an LLM call</summary>
+  <pre>  rank  score  page  chapter
+   1.   0.81    14  Birth
+   2.   0.75    17  Birth
+   3.   0.73    15  Birth
+   4.   0.73    14  Birth</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 5: query the engine (live local call)</summary>
+  <pre>  answer: The bodhisatta was born in the mother&#x27;s womb, specifically at **Kapilavatthu**, the capital city of the Sakya family. According to the text: &gt; &quot;My father was named King Suddhodana. My mother, the giver of birth, was named Queen Māyā. Our capital city was named Kapilavatthu.&quot; — DN 14 &gt; &quot;When the bodhisatta, mindful &amp; alert, descended from the Tusita host and alighted in his mother’s womb...&quot; Thus, the birthplace is within the mother’s womb at Kapilavatthu, in the Sakya family&#x27;s realm.
+  This line is a captured snapshot, not a reproducible score.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 6: what the framework owns</summary>
+  <pre>  Document + Index + QueryEngine replaced our chunk/index/prompt/LLM wiring.
+  The vector model is still ours; the LLM is still Ollama.
+  Unlike rag/llm.py, this path has no response cache; no answer is reused.</pre>
+</details>
+
+  <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/06_llamaindex_engine.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/06_llamaindex_engine.txt">output on GitHub</a></p>
+</section>
+
+
+    <h2 class="section-title">What the framework took over</h2>
+    <p>Our own path in module 01 is a chain of explicit calls: <code>load_chunks()</code>, <code>Retriever.search()</code>, <code>format_context()</code>, <code>llm.chat()</code>. LlamaIndex packages that chain as <code>Document → VectorStoreIndex → QueryEngine</code>. You give it documents and an embedding function; the engine embeds the question, retrieves, builds a prompt, calls the LLM and returns an answer with sources.</p>
+    <p>Two things did not change: the vectors still come from our fastembed adapter over bge-small-en-v1.5, and generation still goes to Ollama. LlamaIndex owns the orchestration, not the model. The adapter is only about fifteen lines in <code>rag/capstone.py</code>, which is why the framework could be used without replacing the embedding stack.</p>
+
+    <h2 class="section-title">Three views of the same book</h2>
+    <p>Module 01's hybrid retriever returned c0030, c0032, c0023 and c0031 by fusing lexical and dense scores. Module 04's Chroma collection, using Chroma's own default embedding, returned c0030, c0032, c0023 and c0024 with cosine distances 0.35, 0.35, 0.36 and 0.39. Here LlamaIndex retrieves pages 14, 17, 15 and 14 in the Birth chapter with scores 0.81, 0.75, 0.73 and 0.73. The first three chunks recur because the underlying text and the question are the same; the ordering differs because the embedding model and scoring rules differ.</p>
+    <p>Notice also what the answer is not. Our own <code>generate.py</code> prompt demands one citation per sentence and an explicit "I don't know" when evidence is absent. The query engine uses its own default prompt, so its answer quotes source passages but does not follow that strict contract. A framework saves wiring; it does not inherit your teaching rules automatically.</p>
+
+    <h2 class="section-title">The capstone, complete</h2>
+    <p>Chroma answered "where do the vectors live and how are they searched?" LlamaIndex answers "how do I turn documents and a question into an answer?" The from-scratch code in <code>chunk.py</code>, <code>index.py</code>, <code>retrieve.py</code>, <code>generate.py</code> and <code>llm.py</code> answers both by showing every step. That comparison is stage 7 of the README's learning path: not a different RAG system, but the same system expressed at three levels of abstraction.</p>
+    <p>The step 5 answer is a captured snapshot. LlamaIndex does not use this repo's response cache, so running the demo again may produce different wording even with thinking off.</p>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>
