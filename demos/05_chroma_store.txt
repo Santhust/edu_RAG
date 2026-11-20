@@ -1,0 +1,44 @@
+== step 1: two retrieval paths ==
+  question: Where was the bodhisatta born?
+  path A: rag/retrieve.py hybrid — TF-IDF + fastembed bge-small vectors
+  path B: Chroma vector store — Chroma's own default embedding
+  Path B does not load our saved .npy or .joblib files.
+
+== step 2: the persistent collection ==
+  chunks in book: 1404
+  collection: noble_warrior | entries before: 0
+  persisted at: data/chroma
+  entries after: 1404
+
+== step 3: one chunk as a database entry ==
+  id: c0030
+  metadata: {'chapter': 'Birth', 'page_end': 17, 'page_start': 16, 'section': 'Birth'}
+  vector dimensions: 384
+  text: strung a blue, yellow, red, white, or beige thread. And then a man of good eyesight, taking it in his hand, would contemplate it: “This is a...
+  An entry is id + vector + text + metadata, not just a row of numbers.
+
+== step 4: query the vector store ==
+  Chroma embeds the question with its own default model and searches by cosine distance.
+  rank  id       distance  chapter
+   1.   c0030   0.35      Birth
+   2.   c0032   0.35      Birth
+   3.   c0023   0.36      Birth
+   4.   c0024   0.39      Birth
+
+== step 5: compare with the from-scratch retriever ==
+  rank  Chroma   distance  |  ours     fused  lexical  dense
+   1.   c0030   0.35      |  c0030   0.86     0.17     0.67
+   2.   c0032   0.35      |  c0032   0.83     0.16     0.68
+   3.   c0023   0.36      |  c0023   0.80     0.10     0.80
+   4.   c0024   0.39      |  c0031   0.70     0.11     0.69
+  overlapping ids: 3 of 4
+  Three things changed at once: store, embedding model and score type.
+  A difference here is not evidence that a vector store improves recall.
+
+== step 6: metadata filtering and boundary ==
+  Entries carry chapter metadata, so filtering is a database query:
+  1. c0030 distance=0.35 chapter=Birth
+  2. c0032 distance=0.35 chapter=Birth
+  3. c0023 distance=0.36 chapter=Birth
+  No LLM is called here. This demo stops at retrieved records;
+  rag/llm.py and rag/generate.py perform the answer step separately.
