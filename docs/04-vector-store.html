@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>04 — Put the vectors in a database · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 04</p>
+    <h1>Put the vectors in a database</h1>
+    <p class="lede">The first three modules searched vectors by hand. Here the same book goes into ChromaDB: 1,404 records with IDs, text and page metadata, queried through a database API. The point is to see which layer a framework owns.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — one question, two retrieval paths</h2>
+      <p>The trace asks the same question as module 01 and compares the from-scratch hybrid retriever with Chroma's default vector-store path. It shows a stored entry, the query result, the ranking difference and a metadata filter. Each step is expandable.</p>
+    </section>
+    <section class="demo">
+  <h2>05_chroma_store</h2>
+  <details class="demo-source">
+    <summary>Source: 05_chroma_store.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;See a chunk become a record in a vector database.
+
+Step 1: state the question and the two retrieval paths being compared.
+Step 2: load the chunks and open the persistent Chroma collection.
+Step 3: inspect one chunk as a stored record with vector and metadata.
+Step 4: query Chroma with its own default embedding, not our saved vectors.
+Step 5: compare the result with the from-scratch hybrid retriever.
+Step 6: filter by metadata and state where this demo stops.
+
+Run from the repo root:
+    .venv/bin/python demos/05_chroma_store.py &gt; demos/05_chroma_store.txt
+
+This is the code path behind `python -m rag.cli capstone --tool chroma`.
+No chat model is called. All numbers print at 2 decimals.
+
+The captured .txt shows a first run that builds the collection. Later runs
+reuse the persistent store, so the &quot;entries before&quot; line will differ.
+&quot;&quot;&quot;</span>
+
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
+
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
+
+<span class="tok-keyword">import</span> chromadb
+
+<span class="tok-keyword">from</span> rag.chunk <span class="tok-keyword">import</span> load_chunks
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+<span class="tok-keyword">from</span> rag.retrieve <span class="tok-keyword">import</span> Retriever
+
+QUESTION = <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
+
+
+settings = Settings.load()
+dense_files = <span class="tok-builtin">sorted</span>(settings.index_dir.glob(<span class="tok-string">&quot;dense-*.npy&quot;</span>))
+<span class="tok-keyword">if</span> <span class="tok-keyword">not</span> dense_files:
+    <span class="tok-keyword">raise</span> <span class="tok-builtin">RuntimeError</span>(<span class="tok-string">&quot;No dense index found; run ingest --embed-backend fastembed&quot;</span>)
+backend = dense_files[<span class="tok-number">0</span>].stem.removeprefix(<span class="tok-string">&quot;dense-&quot;</span>).split(<span class="tok-string">&quot;-&quot;</span>)[<span class="tok-number">0</span>]
+settings = settings.overrides(embed_backend=backend)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: two retrieval paths ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  question: {QUESTION}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  path A: rag/retrieve.py hybrid — TF-IDF + {backend} bge-small vectors&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  path B: Chroma vector store — Chroma&#x27;s own default embedding&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Path B does not load our saved .npy or .joblib files.&quot;</span>)
+
+chunks = load_chunks(settings)
+client = chromadb.PersistentClient(path=<span class="tok-builtin">str</span>(settings.data_dir / <span class="tok-string">&quot;chroma&quot;</span>))
+collection = client.get_or_create_collection(
+    name=<span class="tok-string">&quot;noble_warrior&quot;</span>, metadata={<span class="tok-string">&quot;hnsw:space&quot;</span>: <span class="tok-string">&quot;cosine&quot;</span>}
+)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: the persistent collection ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  chunks in book: {<span class="tok-builtin">len</span>(chunks)}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  collection: {collection.name} | entries before: {collection.count()}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  persisted at: {(settings.data_dir / <span class="tok-string">&#x27;chroma&#x27;</span>).relative_to(settings.data_dir.parent)}&quot;)
+<span class="tok-keyword">if</span> collection.count() == <span class="tok-number">0</span>:
+    collection.add(
+        ids=[chunk.<span class="tok-builtin">id</span> <span class="tok-keyword">for</span> chunk <span class="tok-keyword">in</span> chunks],
+        documents=[chunk.text <span class="tok-keyword">for</span> chunk <span class="tok-keyword">in</span> chunks],
+        metadatas=[
+            {
+                <span class="tok-string">&quot;chapter&quot;</span>: chunk.chapter,
+                <span class="tok-string">&quot;section&quot;</span>: chunk.section,
+                <span class="tok-string">&quot;page_start&quot;</span>: chunk.page_start,
+                <span class="tok-string">&quot;page_end&quot;</span>: chunk.page_end,
+            }
+            <span class="tok-keyword">for</span> chunk <span class="tok-keyword">in</span> chunks
+        ],
+    )
+<span class="tok-builtin">print</span>(f&quot;  entries after: {collection.count()}&quot;)
+
+result = collection.query(query_texts=[QUESTION], n_results=<span class="tok-number">4</span>)
+top_ids = result[<span class="tok-string">&quot;ids&quot;</span>][<span class="tok-number">0</span>]
+distances = result[<span class="tok-string">&quot;distances&quot;</span>]
+result_metadatas = result[<span class="tok-string">&quot;metadatas&quot;</span>]
+<span class="tok-keyword">assert</span> distances <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">and</span> result_metadatas <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>
+record = collection.get(
+    ids=[top_ids[<span class="tok-number">0</span>]], include=[<span class="tok-string">&quot;metadatas&quot;</span>, <span class="tok-string">&quot;documents&quot;</span>, <span class="tok-string">&quot;embeddings&quot;</span>]
+)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 3: one chunk as a database entry ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  id: {record[<span class="tok-string">&#x27;ids&#x27;</span>][<span class="tok-number">0</span>]}&quot;)
+metadatas = record[<span class="tok-string">&quot;metadatas&quot;</span>]
+embeddings = record[<span class="tok-string">&quot;embeddings&quot;</span>]
+documents = record[<span class="tok-string">&quot;documents&quot;</span>]
+<span class="tok-keyword">assert</span> <span class="tok-builtin">isinstance</span>(metadatas, <span class="tok-builtin">list</span>) <span class="tok-keyword">and</span> metadatas <span class="tok-keyword">and</span> <span class="tok-builtin">isinstance</span>(metadatas[<span class="tok-number">0</span>], <span class="tok-builtin">dict</span>)
+<span class="tok-keyword">assert</span> embeddings <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">and</span> <span class="tok-builtin">len</span>(embeddings) &gt; <span class="tok-number">0</span>
+<span class="tok-keyword">assert</span> <span class="tok-builtin">isinstance</span>(documents, <span class="tok-builtin">list</span>) <span class="tok-keyword">and</span> documents <span class="tok-keyword">and</span> <span class="tok-builtin">isinstance</span>(documents[<span class="tok-number">0</span>], <span class="tok-builtin">str</span>)
+record_metadata = <span class="tok-builtin">dict</span>(<span class="tok-builtin">sorted</span>(metadatas[<span class="tok-number">0</span>].items()))
+<span class="tok-builtin">print</span>(f&quot;  metadata: {record_metadata}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  vector dimensions: {<span class="tok-builtin">len</span>(embeddings[<span class="tok-number">0</span>])}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  text: {<span class="tok-string">&#x27; &#x27;</span>.join(documents[<span class="tok-number">0</span>].split())[:<span class="tok-number">140</span>]}...&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  An entry is id + vector + text + metadata, not just a row of numbers.&quot;</span>)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: query the vector store ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Chroma embeds the question with its own default model and searches by cosine distance.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rank  id       distance  chapter&quot;</span>)
+<span class="tok-keyword">for</span> rank, (chunk_id, distance, metadata) <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(
+    <span class="tok-builtin">zip</span>(top_ids, distances[<span class="tok-number">0</span>], result_metadatas[<span class="tok-number">0</span>]), start=<span class="tok-number">1</span>
+):
+    <span class="tok-builtin">print</span>(f&quot;  {rank:&gt;2}.   {chunk_id:&lt;7} {distance:.2f}      {metadata[<span class="tok-string">&#x27;chapter&#x27;</span>]}&quot;)
+
+retriever = Retriever(settings, chunks=chunks)
+ours = retriever.search(QUESTION, k=<span class="tok-number">4</span>, mode=<span class="tok-string">&quot;hybrid&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: compare with the from-scratch retriever ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rank  Chroma   distance  |  ours     fused  lexical  dense&quot;</span>)
+ours_by_rank = {rank: item <span class="tok-keyword">for</span> rank, item <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(ours, start=<span class="tok-number">1</span>)}
+<span class="tok-keyword">for</span> rank <span class="tok-keyword">in</span> <span class="tok-builtin">range</span>(<span class="tok-number">1</span>, <span class="tok-number">5</span>):
+    item = ours_by_rank[rank]
+    <span class="tok-builtin">print</span>(
+        f&quot;  {rank:&gt;2}.   {top_ids[rank - <span class="tok-number">1</span>]:&lt;7} {distances[<span class="tok-number">0</span>][rank - <span class="tok-number">1</span>]:.2f}      |  &quot;
+        f&quot;{item.chunk.<span class="tok-builtin">id</span>:&lt;7} {item.score:.2f}     {item.lexical:.2f}     {item.dense:.2f}&quot;
+    )
+overlap = <span class="tok-builtin">set</span>(top_ids) &amp; {item.chunk.<span class="tok-builtin">id</span> <span class="tok-keyword">for</span> item <span class="tok-keyword">in</span> ours}
+<span class="tok-builtin">print</span>(f&quot;  overlapping ids: {<span class="tok-builtin">len</span>(overlap)} of 4&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Three things changed at once: store, embedding model and score type.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  A difference here is not evidence that a vector store improves recall.&quot;</span>)
+
+filtered = collection.query(
+    query_texts=[QUESTION], n_results=<span class="tok-number">3</span>, where={<span class="tok-string">&quot;chapter&quot;</span>: <span class="tok-string">&quot;Birth&quot;</span>}
+)
+filtered_distances = filtered[<span class="tok-string">&quot;distances&quot;</span>]
+<span class="tok-keyword">assert</span> filtered_distances <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 6: metadata filtering and boundary ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Entries carry chapter metadata, so filtering is a database query:&quot;</span>)
+<span class="tok-keyword">for</span> rank, (chunk_id, distance) <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(
+    <span class="tok-builtin">zip</span>(filtered[<span class="tok-string">&quot;ids&quot;</span>][<span class="tok-number">0</span>], filtered_distances[<span class="tok-number">0</span>]), start=<span class="tok-number">1</span>
+):
+    <span class="tok-builtin">print</span>(f&quot;  {rank}. {chunk_id} distance={distance:.2f} chapter=Birth&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  No LLM is called here. This demo stops at retrieved records;&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rag/llm.py and rag/generate.py perform the answer step separately.&quot;</span>)
+</code></pre>
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: two retrieval paths</summary>
+  <pre>  question: Where was the bodhisatta born?
+  path A: rag/retrieve.py hybrid — TF-IDF + fastembed bge-small vectors
+  path B: Chroma vector store — Chroma&#x27;s own default embedding
+  Path B does not load our saved .npy or .joblib files.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 2: the persistent collection</summary>
+  <pre>  chunks in book: 1404
+  collection: noble_warrior | entries before: 0
+  persisted at: data/chroma
+  entries after: 1404</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 3: one chunk as a database entry</summary>
+  <pre>  id: c0030
+  metadata: {&#x27;chapter&#x27;: &#x27;Birth&#x27;, &#x27;page_end&#x27;: 17, &#x27;page_start&#x27;: 16, &#x27;section&#x27;: &#x27;Birth&#x27;}
+  vector dimensions: 384
+  text: strung a blue, yellow, red, white, or beige thread. And then a man of good eyesight, taking it in his hand, would contemplate it: “This is a...
+  An entry is id + vector + text + metadata, not just a row of numbers.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 4: query the vector store</summary>
+  <pre>  Chroma embeds the question with its own default model and searches by cosine distance.
+  rank  id       distance  chapter
+   1.   c0030   0.35      Birth
+   2.   c0032   0.35      Birth
+   3.   c0023   0.36      Birth
+   4.   c0024   0.39      Birth</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 5: compare with the from-scratch retriever</summary>
+  <pre>  rank  Chroma   distance  |  ours     fused  lexical  dense
+   1.   c0030   0.35      |  c0030   0.86     0.17     0.67
+   2.   c0032   0.35      |  c0032   0.83     0.16     0.68
+   3.   c0023   0.36      |  c0023   0.80     0.10     0.80
+   4.   c0024   0.39      |  c0031   0.70     0.11     0.69
+  overlapping ids: 3 of 4
+  Three things changed at once: store, embedding model and score type.
+  A difference here is not evidence that a vector store improves recall.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 6: metadata filtering and boundary</summary>
+  <pre>  Entries carry chapter metadata, so filtering is a database query:
+  1. c0030 distance=0.35 chapter=Birth
+  2. c0032 distance=0.35 chapter=Birth
+  3. c0023 distance=0.36 chapter=Birth
+  No LLM is called here. This demo stops at retrieved records;
+  rag/llm.py and rag/generate.py perform the answer step separately.</pre>
+</details>
+
+  <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/05_chroma_store.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/05_chroma_store.txt">output on GitHub</a></p>
+</section>
+
+
+    <h2 class="section-title">What Chroma actually owns</h2>
+    <p>Chroma stores records: an ID, a vector, the original text and metadata such as chapter, section and page range. It persists them under <code>data/chroma/</code>, builds a cosine HNSW index and answers <code>collection.query(...)</code>. It does not decide how the book was cleaned, how chunks were cut, how lexical and dense scores are fused, or how a prompt is built. Those remain the app's own code.</p>
+    <p>The demo prints one complete entry so the abstract phrase "a chunk is a record" becomes concrete: <code>c0030</code>, a 384-value vector, the chapter <code>Birth</code>, pages 16–17, and the passage text.</p>
+
+    <h2 class="section-title">Why the ranking moved</h2>
+    <p>Chroma's results were c0030, c0032, c0023 and c0024, with cosine distances 0.35, 0.35, 0.36 and 0.39. Our hybrid retriever returned c0030, c0032, c0023 and c0031 — three of four overlap. Three things changed at once: the storage system, the embedding model and the scoring method. Chroma uses its own default embedding here, not the bge-small vectors from module 03, and it performs dense vector search only rather than lexical/dense fusion. A difference in the list is therefore not evidence that a vector database improves recall.</p>
+
+    <h2 class="section-title">What is actually gained</h2>
+    <p>At 1,404 chunks there is no speed or accuracy win: the old <code>np.dot</code> plus <code>argsort</code> is already instant. What changes is the architecture — persistence across processes, first-class metadata that can be filtered in the query, an index that will scale to a much larger corpus, and a portable API. The demo's final query uses <code>where={"chapter": "Birth"}</code> to show that filtering is now a database operation.</p>
+    <p>This is stage 7 of the README's learning path, the capstone: the same pipeline expressed with a real framework so you can compare it against <code>chunk.py</code> and <code>retrieve.py</code>. No LLM is called on this page; the answer step lives in <code>rag/generate.py</code> and <code>rag/llm.py</code>.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Questions that came up while learning this</h2>
+      <p>These are the questions asked while discussing vector stores and frameworks. Open one to read the explanation.</p>
+
+      <details class="trace-step">
+        <summary>What is the difference between a vector store and a document/chunk/index/query-engine?</summary>
+        <p>A vector store is one component: records of <code>id + vector + text + metadata</code> that answer "give me the k nearest vectors". In <code>rag/capstone.py:30-50</code> a Chroma collection does exactly that, and this demo uses the same calls.</p>
+        <p>Document, chunk, index and query-engine are the pipeline vocabulary of a framework such as LlamaIndex. A Document or Node wraps a chunk with metadata; an Index builds a searchable structure over those nodes; a QueryEngine takes a question, retrieves, builds a prompt, calls an LLM and returns an answer with sources (<code>capstone.py:106-122</code>). The vector store is a part; the query engine is the end-to-end workflow that may use one.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>What is meant by a vector database? Is a chunk an entry? Is our 1404 x 27246 matrix a vector database? Is embedding a vector-DB representation?</summary>
+        <p>A vector database persists vectors with metadata and does nearest-neighbour search, usually with an ANN index and a query API. One chunk can be one record. Here <code>c0030</code> carries its vector, text, chapter, section and page range — step 3 of the trace prints that record.</p>
+        <p><code>lexical.joblib</code> (1404 × 27,246) and <code>dense-*.npy</code> (1404 × 384) are vector representations — the data a vector DB would store — but they are not a database: no named records, metadata store, ANN index or query layer. Search there is hand-written dot product and argsort. Embedding produces coordinates suitable for a vector database; the database is the system around them. The book is represented by the collection of chunk vectors, not one book vector.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Do ChromaDB and LlamaIndex come together, or are they different technologies with the same purpose?</summary>
+        <p>Different layers. Chroma is a vector database: storage and similarity search, stopping at retrieval. LlamaIndex is an orchestration framework: documents, nodes, index, query engine and LLM wiring, and it can use many vector stores.</p>
+        <p>In <code>rag/capstone.py</code> they are two separate demos. <code>chroma_demo()</code> uses Chroma alone with no LLM; <code>llamaindex_demo()</code> uses LlamaIndex with its default in-memory store plus Ollama, with no Chroma. They could be combined by giving LlamaIndex a Chroma-backed vector store, but that is not what the current code does. Analogy: catalogue and shelves versus librarian and reading desk.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>So what will be the improvement?</summary>
+        <p>At 1,404 chunks, none in accuracy. With the same vectors and cosine distance the top-k results are effectively identical, and brute-force dot product is already instant. The real gains are structural: persistence in <code>data/chroma/</code>, first-class records with metadata and filters, an HNSW index that scales beyond this small corpus, and a portable API.</p>
+        <p>Nothing here improves recall, MRR, citation rate or groundedness — those come from chunking, the embedding model, fusion, the prompt and the LLM. A vector store is plumbing around the vectors. This demo also uses Chroma's own default embedding rather than bge-small, so differences in the ranking come from the model swap as well as the store.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>
