@@ -1,0 +1,30 @@
+== step 1: question and wiring ==
+  question: Where was the bodhisatta born?
+  generation: ollama / lfm3:latest
+  embedding: BAAI/bge-small-en-v1.5, through the capstone adapter
+  thinking: off, to keep the local model's output bounded
+
+== step 2: chunks become Documents ==
+  Documents: 1404 from 1404 chunks
+  first metadata: {'chapter': 'Front matter', 'section': 'Introduction', 'page': 1}
+  first text: A LIFE OF THE BUDDHA COMPILED FROM THE PĀLI CANON by Ṭhānissaro Bhikkhu (Geoffrey DeGraff) & Khematto Bhikkhu ...
+
+== step 3: build the index ==
+  index type: VectorStoreIndex
+  VectorStoreIndex embedded every Document with the local adapter.
+
+== step 4: retrieve without an LLM call ==
+  rank  score  page  chapter
+   1.   0.81    14  Birth
+   2.   0.75    17  Birth
+   3.   0.73    15  Birth
+   4.   0.73    14  Birth
+
+== step 5: query the engine (live local call) ==
+  answer: The bodhisatta was born in the mother's womb, specifically at **Kapilavatthu**, the capital city of the Sakya family. According to the text: > "My father was named King Suddhodana. My mother, the giver of birth, was named Queen Māyā. Our capital city was named Kapilavatthu." — DN 14 > "When the bodhisatta, mindful & alert, descended from the Tusita host and alighted in his mother’s womb..." Thus, the birthplace is within the mother’s womb at Kapilavatthu, in the Sakya family's realm.
+  This line is a captured snapshot, not a reproducible score.
+
+== step 6: what the framework owns ==
+  Document + Index + QueryEngine replaced our chunk/index/prompt/LLM wiring.
+  The vector model is still ours; the LLM is still Ollama.
+  Unlike rag/llm.py, this path has no response cache; no answer is reused.
