@@ -1,0 +1,49 @@
+== step 1: question and wiring ==
+  question: Where was the bodhisatta born?
+  generation: ollama / qwen2.5:3b (stable for this chain)
+  embedding: BAAI/bge-small-en-v1.5, through a LangChain adapter
+  reasoning: off, via ChatOllama's reasoning=False parameter
+
+== step 2: chunks become Documents ==
+  Documents: 1404 from 1404 chunks
+  first metadata: {'chapter': 'Front matter', 'id': 'c0001', 'page_start': 1, 'section': 'Introduction'}
+
+== step 3: build the vector store ==
+  entries: 1404
+  persisted at: data/chroma_langchain
+  store: built in batches of 64 to bound memory on this machine
+
+== step 4: retrieve without an LLM call ==
+  rank  id       distance  page  chapter
+   1.   c0023   0.39       14  Birth
+   2.   c0024   0.52       14  Birth
+   3.   c0027   0.62       15  Birth
+   4.   c0031   0.62       17  Birth
+  c0035 with Lumbini: rank 9 of 12 retrieved
+  c0035 distance: 0.69, page 19
+  book says: ... has been born for welfare & happiness in the human world in a town in the Sakyan countryside, Lumbini. That’s why we’re cont...
+
+== step 5: compare with the from-scratch retriever ==
+  rank  LangChain |  ours     fused
+   1.   c0023   |  c0030   0.86
+   2.   c0024   |  c0032   0.83
+   3.   c0027   |  c0023   0.80
+   4.   c0031   |  c0031   0.70
+  overlapping ids: 2 of 4
+  The store and the scoring rule changed; the embedding model did not.
+
+== step 6: LCEL chain with four excerpts (live local call) ==
+  excerpts: 4 (no Lumbini chunk)
+  answer: I don't know based on the book.
+  This line is a captured snapshot, not a reproducible score.
+
+== step 7: same chain with twelve excerpts (live local call) ==
+  excerpts: 12 (includes c0035 at rank 9)
+  answer: The bodhisatta was born in Lumbini, a town in the Sakyan countryside, in the northwest of the Ariyan world—the middle Ganges valley.
+  This line is also a captured snapshot.
+
+== step 8: what the framework owns ==
+  Document + Chroma vector store + retriever + LCEL chain are framework code.
+  The vector model is still ours; the LLM is still Ollama.
+  Steps 6 and 7 differ only in how many excerpts the retriever passed in.
+  No response cache: a rerun can produce different wording.
