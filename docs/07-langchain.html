@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>07 — Compose the pipeline with LangChain · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 07</p>
+    <h1>Compose the pipeline with LangChain</h1>
+    <p class="lede">LlamaIndex packages the pipeline as a query engine. LangChain packages it as runnables you chain together. This page asks whether that changes the answer — and uses one missing chunk to show how much retrieval depth matters.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — one question, two context sizes</h2>
+      <p>Same question as every other module. The trace wraps the 1,404 chunks as LangChain Documents, builds a Chroma store with our bge-small adapter, retrieves with a LangChain retriever, then runs the same LCEL chain twice: once with four excerpts and once with twelve. Both answers are live snapshots, not reproducible scores. Each step is expandable.</p>
+    </section>
+    <section class="demo">
+  <h2>07_langchain_chain</h2>
+  <details class="demo-source">
+    <summary>Source: 07_langchain_chain.py (expand)</summary>
+    <pre><code class="language-python"><span class="tok-string">&quot;&quot;&quot;See LangChain compose the same pipeline with LCEL and a Chroma retriever.
+
+Step 1: state the question, the model and the embedding adapter.
+Step 2: wrap the chunks as LangChain Documents with metadata.
+Step 3: build a fresh Chroma store with our bge-small embeddings.
+Step 4: retrieve nodes and scores, then locate the Lumbini chunk deeper down.
+Step 5: compare with the from-scratch hybrid retriever.
+Step 6: run an LCEL chain on the top four excerpts.
+Step 7: run the same chain with twelve excerpts.
+Step 8: name what the framework owns and mark both answers as snapshots.
+
+Run from the repo root:
+    .venv/bin/python demos/07_langchain_chain.py &gt; demos/07_langchain_chain.txt
+
+The store is built once in batches of 64 to bound memory, then loaded from
+disk on later runs. The captured .txt shows that first build; later runs print
+a load line instead. Steps 6 and 7 use qwen2.5:3b because lfm3 returned empty
+content under this prompt through langchain-ollama even with reasoning=False.
+Both answers are snapshots: LangChain does not use this repo&#x27;s response cache.
+All numbers print at 2 decimals.
+&quot;&quot;&quot;</span>
+
+<span class="tok-keyword">import</span> sys
+<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
+
+sys.path.insert(<span class="tok-number">0</span>, <span class="tok-builtin">str</span>(Path(__file__).resolve().parent.parent))
+
+<span class="tok-keyword">from</span> fastembed <span class="tok-keyword">import</span> TextEmbedding
+<span class="tok-keyword">from</span> langchain_chroma <span class="tok-keyword">import</span> Chroma
+<span class="tok-keyword">from</span> langchain_core.documents <span class="tok-keyword">import</span> Document
+<span class="tok-keyword">from</span> langchain_core.embeddings <span class="tok-keyword">import</span> Embeddings
+<span class="tok-keyword">from</span> langchain_core.output_parsers <span class="tok-keyword">import</span> StrOutputParser
+<span class="tok-keyword">from</span> langchain_core.prompts <span class="tok-keyword">import</span> ChatPromptTemplate
+<span class="tok-keyword">from</span> langchain_ollama <span class="tok-keyword">import</span> ChatOllama
+
+<span class="tok-keyword">from</span> rag.chunk <span class="tok-keyword">import</span> load_chunks
+<span class="tok-keyword">from</span> rag.config <span class="tok-keyword">import</span> Settings
+<span class="tok-keyword">from</span> rag.retrieve <span class="tok-keyword">import</span> Retriever
+
+QUESTION = <span class="tok-string">&quot;Where was the bodhisatta born?&quot;</span>
+
+
+<span class="tok-keyword">class</span> <span class="tok-def">LocalBge</span>(Embeddings):
+    <span class="tok-string">&quot;&quot;&quot;Expose our cached fastembed model through LangChain&#x27;s interface.&quot;&quot;&quot;</span>
+
+    <span class="tok-keyword">def</span> <span class="tok-def">__init__</span>(self, model_name: <span class="tok-builtin">str</span>) -&gt; <span class="tok-keyword">None</span>:
+        self.model = TextEmbedding(model_name=model_name)
+
+    <span class="tok-keyword">def</span> <span class="tok-def">embed_documents</span>(self, texts: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">list</span>[<span class="tok-builtin">float</span>]]:
+        <span class="tok-keyword">return</span> [vector.tolist() <span class="tok-keyword">for</span> vector <span class="tok-keyword">in</span> self.model.embed(texts)]
+
+    <span class="tok-keyword">def</span> <span class="tok-def">embed_query</span>(self, text: <span class="tok-builtin">str</span>) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">float</span>]:
+        <span class="tok-keyword">return</span> <span class="tok-builtin">list</span>(self.model.embed([text]))[<span class="tok-number">0</span>].tolist()
+
+
+settings = Settings.load()
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;== step 1: question and wiring ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  question: {QUESTION}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  generation: {settings.llm_backend} / qwen2.5:3b (stable for this chain)&quot;)
+<span class="tok-builtin">print</span>(f&quot;  embedding: {settings.embed_model}, through a LangChain adapter&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  reasoning: off, via ChatOllama&#x27;s reasoning=False parameter&quot;</span>)
+
+chunks = load_chunks(settings)
+documents = [
+    Document(
+        page_content=chunk.text,
+        metadata={
+            <span class="tok-string">&quot;id&quot;</span>: chunk.<span class="tok-builtin">id</span>,
+            <span class="tok-string">&quot;chapter&quot;</span>: chunk.chapter,
+            <span class="tok-string">&quot;section&quot;</span>: chunk.section,
+            <span class="tok-string">&quot;page_start&quot;</span>: chunk.page_start,
+        },
+    )
+    <span class="tok-keyword">for</span> chunk <span class="tok-keyword">in</span> chunks
+]
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 2: chunks become Documents ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  Documents: {<span class="tok-builtin">len</span>(documents)} from {<span class="tok-builtin">len</span>(chunks)} chunks&quot;)
+<span class="tok-builtin">print</span>(f&quot;  first metadata: {<span class="tok-builtin">dict</span>(<span class="tok-builtin">sorted</span>(documents[<span class="tok-number">0</span>].metadata.items()))}&quot;)
+
+embedding = LocalBge(settings.embed_model)
+store_path = settings.data_dir / <span class="tok-string">&quot;chroma_langchain&quot;</span>
+<span class="tok-keyword">if</span> store_path.exists():
+    store = Chroma(persist_directory=<span class="tok-builtin">str</span>(store_path), embedding_function=embedding)
+    store_state = <span class="tok-string">&quot;loaded from disk, no embeddings recomputed&quot;</span>
+<span class="tok-keyword">else</span>:
+    store = Chroma(persist_directory=<span class="tok-builtin">str</span>(store_path), embedding_function=embedding)
+    <span class="tok-keyword">for</span> start <span class="tok-keyword">in</span> <span class="tok-builtin">range</span>(<span class="tok-number">0</span>, <span class="tok-builtin">len</span>(documents), <span class="tok-number">64</span>):
+        store.add_documents(documents[start : start + <span class="tok-number">64</span>])
+    store_state = <span class="tok-string">&quot;built in batches of 64 to bound memory on this machine&quot;</span>
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 3: build the vector store ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  entries: {store._collection.count()}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  persisted at: {store_path.relative_to(settings.data_dir.parent)}&quot;)
+<span class="tok-builtin">print</span>(f&quot;  store: {store_state}&quot;)
+
+retriever = store.as_retriever(search_kwargs={<span class="tok-string">&quot;k&quot;</span>: <span class="tok-number">4</span>})
+chosen = retriever.invoke(QUESTION)
+scored = store.similarity_search_with_score(QUESTION, k=<span class="tok-number">4</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 4: retrieve without an LLM call ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rank  id       distance  page  chapter&quot;</span>)
+<span class="tok-keyword">for</span> rank, (document, distance) <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(scored, start=<span class="tok-number">1</span>):
+    <span class="tok-builtin">print</span>(
+        f&quot;  {rank:&gt;2}.   {document.metadata[<span class="tok-string">&#x27;id&#x27;</span>]:&lt;7} {distance:.2f}      &quot;
+        f&quot;{document.metadata[<span class="tok-string">&#x27;page_start&#x27;</span>]:&gt;3}  {document.metadata[<span class="tok-string">&#x27;chapter&#x27;</span>]}&quot;
+    )
+
+wide = store.similarity_search_with_score(QUESTION, k=<span class="tok-number">12</span>)
+lumbini_rank = <span class="tok-builtin">next</span>(
+    (
+        rank
+        <span class="tok-keyword">for</span> rank, (document, _) <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(wide, start=<span class="tok-number">1</span>)
+        <span class="tok-keyword">if</span> <span class="tok-string">&quot;Lumbini&quot;</span> <span class="tok-keyword">in</span> document.page_content
+    ),
+    <span class="tok-keyword">None</span>,
+)
+<span class="tok-builtin">print</span>(f&quot;  c0035 with Lumbini: rank {lumbini_rank} of {<span class="tok-builtin">len</span>(wide)} retrieved&quot;)
+<span class="tok-keyword">if</span> lumbini_rank <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>:
+    document, distance = wide[lumbini_rank - <span class="tok-number">1</span>]
+    flat = <span class="tok-string">&quot; &quot;</span>.join(document.page_content.split())
+    position = flat.find(<span class="tok-string">&quot;Lumbini&quot;</span>)
+    <span class="tok-builtin">print</span>(f&quot;  c0035 distance: {distance:.2f}, page {document.metadata[<span class="tok-string">&#x27;page_start&#x27;</span>]}&quot;)
+    <span class="tok-builtin">print</span>(f&quot;  book says: ...{flat[<span class="tok-builtin">max</span>(<span class="tok-number">0</span>, position - <span class="tok-number">95</span>) : position + <span class="tok-number">30</span>]}...&quot;)
+
+dense_files = <span class="tok-builtin">sorted</span>(settings.index_dir.glob(<span class="tok-string">&quot;dense-*.npy&quot;</span>))
+<span class="tok-keyword">if</span> <span class="tok-keyword">not</span> dense_files:
+    <span class="tok-keyword">raise</span> <span class="tok-builtin">RuntimeError</span>(<span class="tok-string">&quot;No dense index found; run ingest --embed-backend fastembed&quot;</span>)
+backend = dense_files[<span class="tok-number">0</span>].stem.removeprefix(<span class="tok-string">&quot;dense-&quot;</span>).split(<span class="tok-string">&quot;-&quot;</span>)[<span class="tok-number">0</span>]
+ours = Retriever(settings.overrides(embed_backend=backend), chunks=chunks).search(
+    QUESTION, k=<span class="tok-number">4</span>, mode=<span class="tok-string">&quot;hybrid&quot;</span>
+)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 5: compare with the from-scratch retriever ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  rank  LangChain |  ours     fused&quot;</span>)
+<span class="tok-keyword">for</span> rank <span class="tok-keyword">in</span> <span class="tok-builtin">range</span>(<span class="tok-number">1</span>, <span class="tok-number">5</span>):
+    item = ours[rank - <span class="tok-number">1</span>]
+    <span class="tok-builtin">print</span>(
+        f&quot;  {rank:&gt;2}.   {chosen[rank - <span class="tok-number">1</span>].metadata[<span class="tok-string">&#x27;id&#x27;</span>]:&lt;7} |  &quot;
+        f&quot;{item.chunk.<span class="tok-builtin">id</span>:&lt;7} {item.score:.2f}&quot;
+    )
+overlap = {d.metadata[<span class="tok-string">&quot;id&quot;</span>] <span class="tok-keyword">for</span> d <span class="tok-keyword">in</span> chosen} &amp; {item.chunk.<span class="tok-builtin">id</span> <span class="tok-keyword">for</span> item <span class="tok-keyword">in</span> ours}
+<span class="tok-builtin">print</span>(f&quot;  overlapping ids: {<span class="tok-builtin">len</span>(overlap)} of 4&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  The store and the scoring rule changed; the embedding model did not.&quot;</span>)
+
+context4 = <span class="tok-string">&quot;\n\n&quot;</span>.join(
+    f&quot;[{document.metadata[<span class="tok-string">&#x27;id&#x27;</span>]}] {document.page_content}&quot; <span class="tok-keyword">for</span> document <span class="tok-keyword">in</span> chosen
+)
+prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            <span class="tok-string">&quot;system&quot;</span>,
+            <span class="tok-string">&quot;Answer only from the numbered excerpts, in at most three sentences. &quot;</span>
+            <span class="tok-string">&quot;Cite each sentence with its [id]. If the answer is not in the &quot;</span>
+            <span class="tok-string">&quot;excerpts, say \&quot;I don&#x27;t know based on the book.\&quot;&quot;</span>,
+        ),
+        (<span class="tok-string">&quot;human&quot;</span>, <span class="tok-string">&quot;Excerpts:\n{context}\n\nQuestion: {question}&quot;</span>),
+    ]
+)
+llm = ChatOllama(
+    model=<span class="tok-string">&quot;qwen2.5:3b&quot;</span>,
+    temperature=settings.temperature,
+    reasoning=<span class="tok-keyword">False</span>,
+    num_predict=<span class="tok-number">200</span>,
+)
+chain = prompt | llm | StrOutputParser()
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 6: LCEL chain with four excerpts (live local call) ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  excerpts: {<span class="tok-builtin">len</span>(chosen)} (no Lumbini chunk)&quot;)
+answer4 = chain.invoke({<span class="tok-string">&quot;context&quot;</span>: context4, <span class="tok-string">&quot;question&quot;</span>: QUESTION})
+<span class="tok-builtin">print</span>(f&quot;  answer: {<span class="tok-string">&#x27; &#x27;</span>.join(answer4.split())}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  This line is a captured snapshot, not a reproducible score.&quot;</span>)
+
+context12 = <span class="tok-string">&quot;\n\n&quot;</span>.join(
+    f&quot;[{document.metadata[<span class="tok-string">&#x27;id&#x27;</span>]}] {document.page_content}&quot;
+    <span class="tok-keyword">for</span> document, _ <span class="tok-keyword">in</span> wide
+)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 7: same chain with twelve excerpts (live local call) ==&quot;</span>)
+<span class="tok-builtin">print</span>(f&quot;  excerpts: {<span class="tok-builtin">len</span>(wide)} (includes c0035 at rank {lumbini_rank})&quot;)
+answer12 = chain.invoke({<span class="tok-string">&quot;context&quot;</span>: context12, <span class="tok-string">&quot;question&quot;</span>: QUESTION})
+<span class="tok-builtin">print</span>(f&quot;  answer: {<span class="tok-string">&#x27; &#x27;</span>.join(answer12.split())}&quot;)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  This line is also a captured snapshot.&quot;</span>)
+
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;\n== step 8: what the framework owns ==&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Document + Chroma vector store + retriever + LCEL chain are framework code.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  The vector model is still ours; the LLM is still Ollama.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  Steps 6 and 7 differ only in how many excerpts the retriever passed in.&quot;</span>)
+<span class="tok-builtin">print</span>(<span class="tok-string">&quot;  No response cache: a rerun can produce different wording.&quot;</span>)
+</code></pre>
+  </details>
+  <h3>Captured output — expand a step</h3>
+  <details class="trace-step" open>
+  <summary>step 1: question and wiring</summary>
+  <pre>  question: Where was the bodhisatta born?
+  generation: ollama / qwen2.5:3b (stable for this chain)
+  embedding: BAAI/bge-small-en-v1.5, through a LangChain adapter
+  reasoning: off, via ChatOllama&#x27;s reasoning=False parameter</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 2: chunks become Documents</summary>
+  <pre>  Documents: 1404 from 1404 chunks
+  first metadata: {&#x27;chapter&#x27;: &#x27;Front matter&#x27;, &#x27;id&#x27;: &#x27;c0001&#x27;, &#x27;page_start&#x27;: 1, &#x27;section&#x27;: &#x27;Introduction&#x27;}</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 3: build the vector store</summary>
+  <pre>  entries: 1404
+  persisted at: data/chroma_langchain
+  store: built in batches of 64 to bound memory on this machine</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 4: retrieve without an LLM call</summary>
+  <pre>  rank  id       distance  page  chapter
+   1.   c0023   0.39       14  Birth
+   2.   c0024   0.52       14  Birth
+   3.   c0027   0.62       15  Birth
+   4.   c0031   0.62       17  Birth
+  c0035 with Lumbini: rank 9 of 12 retrieved
+  c0035 distance: 0.69, page 19
+  book says: ... has been born for welfare &amp; happiness in the human world in a town in the Sakyan countryside, Lumbini. That’s why we’re cont...</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 5: compare with the from-scratch retriever</summary>
+  <pre>  rank  LangChain |  ours     fused
+   1.   c0023   |  c0030   0.86
+   2.   c0024   |  c0032   0.83
+   3.   c0027   |  c0023   0.80
+   4.   c0031   |  c0031   0.70
+  overlapping ids: 2 of 4
+  The store and the scoring rule changed; the embedding model did not.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 6: LCEL chain with four excerpts (live local call)</summary>
+  <pre>  excerpts: 4 (no Lumbini chunk)
+  answer: I don&#x27;t know based on the book.
+  This line is a captured snapshot, not a reproducible score.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 7: same chain with twelve excerpts (live local call)</summary>
+  <pre>  excerpts: 12 (includes c0035 at rank 9)
+  answer: The bodhisatta was born in Lumbini, a town in the Sakyan countryside, in the northwest of the Ariyan world—the middle Ganges valley.
+  This line is also a captured snapshot.</pre>
+</details>
+
+<details class="trace-step" open>
+  <summary>step 8: what the framework owns</summary>
+  <pre>  Document + Chroma vector store + retriever + LCEL chain are framework code.
+  The vector model is still ours; the LLM is still Ollama.
+  Steps 6 and 7 differ only in how many excerpts the retriever passed in.
+  No response cache: a rerun can produce different wording.</pre>
+</details>
+
+  <p class="demo-links"><a href="https://github.com/Santhust/edu_RAG/blob/main/demos/07_langchain_chain.py">source on GitHub</a> · <a href="https://github.com/Santhust/edu_RAG/blob/main/demos/07_langchain_chain.txt">output on GitHub</a></p>
+</section>
+
+
+    <h2 class="section-title">What LCEL actually buys you</h2>
+    <p>Instead of one <code>QueryEngine</code> object, LangChain gives you pieces that compose with <code>|</code>: a prompt template, a chat model and an output parser. The retriever is another swappable piece. That is the real lesson here — not a new retrieval algorithm, but a different way to wire the same parts.</p>
+    <p>Two details matter in the trace. The embedding model is still ours, wrapped in a ten-line <code>Embeddings</code> adapter; Chroma is only the store. And <code>ChatOllama</code> needs <code>reasoning=False</code>, not <code>think=False</code>, or a thinking model spends its whole token budget and returns empty content. This demo uses qwen2.5:3b because lfm3 returned empty content under the strict prompt; the output says so explicitly.</p>
+
+    <h2 class="section-title">Four ways in, same book</h2>
+    <table>
+      <thead>
+        <tr><th>path</th><th>what it owns</th><th>evidence it found first</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>From scratch, module 01</td><td>chunk, index, fuse, prompt, LLM calls</td><td>c0030, c0032, c0023, c0031</td></tr>
+        <tr><td>Chroma, module 04</td><td>persistent vector store, default embedding</td><td>c0030, c0032, c0023, c0024</td></tr>
+        <tr><td>LlamaIndex, module 05</td><td>Document, VectorStoreIndex, QueryEngine</td><td>pages 14, 17, 15, 14 with scores 0.81, 0.75, 0.73, 0.73</td></tr>
+        <tr><td>LangChain, module 07</td><td>Document, Chroma store, retriever, LCEL chain</td><td>c0023, c0024, c0027, c0031</td></tr>
+      </tbody>
+    </table>
+    <p>The chunks recur because the book and the question are the same. Their order changes because the embedding model, scoring rule and prompt differ. No row is "better RAG" than another: they are different places to put the boundaries between the same steps.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Follow-up questions</h2>
+
+      <details class="trace-step">
+        <summary>But the bodhisatta was born in Lumbini — does the book actually say that?</summary>
+        <p>Yes. The only chunk containing "Lumbini" is c0035 in the Birth chapter on page 19. It says the bodhisatta "has been born for welfare &amp; happiness in the human world in a town in the Sakyan countryside, Lumbini."</p>
+        <p>The from-scratch hybrid retriever ranks that chunk 12 of 12 in a twelve-result list. LangChain's dense-only Chroma retriever ranks it 9 of 12, with distance 0.69. Neither puts it in the top four used for the first answer. With four excerpts the model correctly refuses: "I don't know based on the book." With twelve excerpts the same chain answers: "The bodhisatta was born in Lumbini, a town in the Sakyan countryside..."</p>
+        <p>So this is a retrieval-depth failure first, not a generation failure. The question contains no word "Lumbini", so lexical matching cannot find it. The dense score is reasonable but not high enough to beat chunks about the mother's womb and the birth scene. The generator can only use what the retriever hands it: widening the context from four to twelve changed the answer without changing the prompt, model or chain.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Why use qwen here when the default is lfm3?</summary>
+        <p>Because the strict prompt produced empty content from <code>lfm3:latest</code> through <code>langchain-ollama</code>, even with <code>reasoning=False</code>. A spike showed that <code>think=False</code> is silently accepted and ignored by that wrapper. This is a framework-integration observation, not a claim that lfm3 is a worse retriever or reasoner. The demo prints the substituted model in step 1 and marks both answers as snapshots.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Is LangChain better than LlamaIndex?</summary>
+        <p>Neither is "better" at retrieving this book. LlamaIndex gives you a query engine; LangChain gives you composable runnables and a retriever interface you can point at different stores. If you want agents, tools or callbacks, LangChain is the more natural place to go next. If you want one object that takes documents to an answer, LlamaIndex is shorter. Both leave the vectors and the LLM underneath unchanged, which is why modules 04 through 07 keep returning the same neighbourhood of chunks.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>

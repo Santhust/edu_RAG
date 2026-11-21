@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>07 — Compose the pipeline with LangChain · edu_RAG</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="eyebrow"><a href="index.html">All modules</a> / 07</p>
+    <h1>Compose the pipeline with LangChain</h1>
+    <p class="lede">LlamaIndex packages the pipeline as a query engine. LangChain packages it as runnables you chain together. This page asks whether that changes the answer — and uses one missing chunk to show how much retrieval depth matters.</p>
+  </header>
+
+  <main>
+    <section class="demo-intro">
+      <h2 class="section-title">Worked example — one question, two context sizes</h2>
+      <p>Same question as every other module. The trace wraps the 1,404 chunks as LangChain Documents, builds a Chroma store with our bge-small adapter, retrieves with a LangChain retriever, then runs the same LCEL chain twice: once with four excerpts and once with twelve. Both answers are live snapshots, not reproducible scores. Each step is expandable.</p>
+    </section>
+    <!--demo:07_langchain_chain-->
+
+    <h2 class="section-title">What LCEL actually buys you</h2>
+    <p>Instead of one <code>QueryEngine</code> object, LangChain gives you pieces that compose with <code>|</code>: a prompt template, a chat model and an output parser. The retriever is another swappable piece. That is the real lesson here — not a new retrieval algorithm, but a different way to wire the same parts.</p>
+    <p>Two details matter in the trace. The embedding model is still ours, wrapped in a ten-line <code>Embeddings</code> adapter; Chroma is only the store. And <code>ChatOllama</code> needs <code>reasoning=False</code>, not <code>think=False</code>, or a thinking model spends its whole token budget and returns empty content. This demo uses qwen2.5:3b because lfm3 returned empty content under the strict prompt; the output says so explicitly.</p>
+
+    <h2 class="section-title">Four ways in, same book</h2>
+    <table>
+      <thead>
+        <tr><th>path</th><th>what it owns</th><th>evidence it found first</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>From scratch, module 01</td><td>chunk, index, fuse, prompt, LLM calls</td><td>c0030, c0032, c0023, c0031</td></tr>
+        <tr><td>Chroma, module 04</td><td>persistent vector store, default embedding</td><td>c0030, c0032, c0023, c0024</td></tr>
+        <tr><td>LlamaIndex, module 05</td><td>Document, VectorStoreIndex, QueryEngine</td><td>pages 14, 17, 15, 14 with scores 0.81, 0.75, 0.73, 0.73</td></tr>
+        <tr><td>LangChain, module 07</td><td>Document, Chroma store, retriever, LCEL chain</td><td>c0023, c0024, c0027, c0031</td></tr>
+      </tbody>
+    </table>
+    <p>The chunks recur because the book and the question are the same. Their order changes because the embedding model, scoring rule and prompt differ. No row is "better RAG" than another: they are different places to put the boundaries between the same steps.</p>
+
+    <section class="qa">
+      <h2 class="section-title">Follow-up questions</h2>
+
+      <details class="trace-step">
+        <summary>But the bodhisatta was born in Lumbini — does the book actually say that?</summary>
+        <p>Yes. The only chunk containing "Lumbini" is c0035 in the Birth chapter on page 19. It says the bodhisatta "has been born for welfare &amp; happiness in the human world in a town in the Sakyan countryside, Lumbini."</p>
+        <p>The from-scratch hybrid retriever ranks that chunk 12 of 12 in a twelve-result list. LangChain's dense-only Chroma retriever ranks it 9 of 12, with distance 0.69. Neither puts it in the top four used for the first answer. With four excerpts the model correctly refuses: "I don't know based on the book." With twelve excerpts the same chain answers: "The bodhisatta was born in Lumbini, a town in the Sakyan countryside..."</p>
+        <p>So this is a retrieval-depth failure first, not a generation failure. The question contains no word "Lumbini", so lexical matching cannot find it. The dense score is reasonable but not high enough to beat chunks about the mother's womb and the birth scene. The generator can only use what the retriever hands it: widening the context from four to twelve changed the answer without changing the prompt, model or chain.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Why use qwen here when the default is lfm3?</summary>
+        <p>Because the strict prompt produced empty content from <code>lfm3:latest</code> through <code>langchain-ollama</code>, even with <code>reasoning=False</code>. A spike showed that <code>think=False</code> is silently accepted and ignored by that wrapper. This is a framework-integration observation, not a claim that lfm3 is a worse retriever or reasoner. The demo prints the substituted model in step 1 and marks both answers as snapshots.</p>
+      </details>
+
+      <details class="trace-step">
+        <summary>Is LangChain better than LlamaIndex?</summary>
+        <p>Neither is "better" at retrieving this book. LlamaIndex gives you a query engine; LangChain gives you composable runnables and a retriever interface you can point at different stores. If you want agents, tools or callbacks, LangChain is the more natural place to go next. If you want one object that takes documents to an answer, LlamaIndex is shorter. Both leave the vectors and the LLM underneath unchanged, which is why modules 04 through 07 keep returning the same neighbourhood of chunks.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><a href="index.html">← All modules</a> · <a href="https://github.com/Santhust/edu_RAG">Source repository</a></p>
+  </footer>
+</body>
+</html>
